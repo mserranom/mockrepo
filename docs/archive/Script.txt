@@ -1,0 +1,164 @@
+Canevaccio (linking words in square brackets)
+
+Enter the Stage
+
+Thank you very much for the introduction, and thank you for the opportunity to present at this series, thank you Miika for organising. Before starting, I would like to spend one minute to introduce myself, as some of you have not meet me yet. I am a PhD student at the Norwegian School of Economics in Bergen, Norway, and I am visiting Stockholm University until the end of July. My research topics are at the intersection between empirical political economy and a mix of household finance, labour, culture, institutions and economic history. Today, I am presenting my joint project with my friend Nicolò, who is at the Rhoades Center at Brown University. It is very much a work in progress and it is the first time I present it in person, so any comment is more than welcome
+
+[the title is very straightforward, so let's start!]
+
+Introduction
+
+The main starting point of the rationale behind this study is that populism parties have experienced a spectacular growth in number and consensus throughout recent history among most of the Western democracies.
+Think about, how many outstanding examples we had in the last decade: Brexit, Trump, the Five Star Movement in Italy, Law and Justice in Poland, and so on, and not only in the Western democracies if you think about Venezuela.
+
+This political backlash is expensive in terms of socio-economic costs in the longer run. Populists produce short-lived booms using expansionary policies for consensus, which lead to high economic costs (10% lower GDP per capita and consumption) and institutional decay in the longer run, and negative spillovers on beliefs, norms and values in the short run (that allow hate crimes towards immigrants, religious minorities and non-heterosexual communities).
+
+Scholars has devoted attention to the economic drivers on populist voting, but we are particularly attracted by the divergent trends of bank lending and the popularity of such movements at the aftermath of the Great Financial Crisis: it cannot be a case that a severe and widespread decline in bank lending sees a paramount and widespread increase of populist parties' consensus and insurgence
+
+So, we conjecture that credit contraction has played a major role on shaping political preferences and thus we ask ourselves
+
+Can credit shocks fuel populism in modern democracies?
+
+This paper uses Germany as a testing ground for this question as it provides an exogenous credit shock that we are going to discuss straight after and it offers heterogeneity of populism across the political spectrum.
+
+Commerzbank Lending Cut
+
+[The dynamic of the credit shock comes as it follows:]
+
+At the end of 2008 Commerzbank, one of the largest German universal banks
+1. suffered significant losses in the international trading books, mostly triggered by the exposure on asset-backed securities related to the US subprime mortgage crisis and in particular magnified by the insolvency of Lehman Brothers and the bailout of the Icelandic Banks [which lead to]
+
+2. Temporary Liquidity Shock, as equity capital fell because those assets had to be written down as losses [and caused]
+
+3. Temporary Lending Cut, necessary to comply with Basel II's regulation on Tier 1 Capital Ratio, for which the only way to fulfil the criteria given the liquidity shock was to reduce the risk-weighted assets
+(the lending cut affect mostly firms, whereas it leaves household debt not affected due to the intervention of a government-owned fund)
+
+Most importantly, this lending cut anticipates the wider downturn of the domestic credit due to the Great Financial Crisis, such that we can completely disentangle the effect from the nuisance of the crisis!
+
+[Let me illustrate you the timing and size of the shock]
+
+This graph is the logarithm of the lending stock to German non-financial customers, in green you can see the stock for Commerzbank whereas in blue and red you have all the other banks and commercial banks. We can see that the stock drops in 2008, where I can assure you that the cut happened 99% in the last two quarters of the year, and it last alone until 2010 when all the loan market collapsed.
+
+Methodology
+
+[so what we do to see the effect of the lending cut on political preferences]
+
+We exploit the spatial variation in exposure to the credit contraction at county level to observe the time variation generated on the individual political preferences
+
+These patterns will be informative about the surplus demand of populism activated by the credit crunch
+
+[Then, to accommodate the shift in demand, we complement the results] describing the response on the supply side with the help of text analysis , accounting whether voters shift preferences in favour of parties that adopt a more populist rhetoric, discuss banking and crisis issues, and that use a more populist rhetoric while discussing those issues
+
+Summary of findings
+
+[Since I am not sure we will arrive at the end of the slides, let me give you the main takeaways from our exercise]
+
+We find a positive effect of the credit shock on revealed political preferences and the likelihood to vote for a populist party
+
+The credit shock plays a minor but significant role on the rise of populism in Germany and it produces a sociotropic reaction on voter than an egotropic reaction, which means that, as there is no direct impact of the credit shock at individual level as household debt and migration were not affected, and the lending cut is extended across many segments of the population and restricted to a specific cateogry of voters, individuals tend to react to the general economic situation of their region triggered by the credit shock rather than their specific condition
+
+Which includes lower economic growth, labour market frictions and higher risk of unemployment, for example
+
+[Then, we see that ] The demand shift rewards parties that adopt a more populist rhetoric and focus more on banking-related topics, which suggests that voters are not blinded by the mere populist rhetoric but they do also care about the topics that populists discuss
+
+Outline
+
+[This is the outline of the remainder of the presentation] First, I will talk about the data and the background of the analysis, then I will jump to the effect of the credit shock on political preferences, and I will conclude with the response on the supply side to the demand shock.
+
+[So, for the analysis we need three main components:] We need a measure for the credit shock, then we need individual preferences as we are looking at voting behaviour, and we need to classify what is populism and what is not using a formal metric 
+
+Exposure to the Credit Shock
+
+[Let's start from the exposure to the credit shock!] We create a measure of Commerzbank exposure at county-level in 2006, as a proxy for the credit shock using firm-level data
+
+Our source is the Amadeus dataset, which provides us with data on bank accounts held by each firm established before 2006. The data are linked by unique identifier to the respective firms, which goes from a minimum of zero to a maximum of seven accounts. We are able to retrieve around nine hundred fifty thousand bank relationships, of which almost one hundred thousand are Commerzbank's
+
+[Given these data we obtain this spatial variation of exposure at county level.] As you can see, there is a lot of variation across Germany, with higher exposure around Frankfurt, Duesseldorf, Hamburg and Berlin. 
+
+[How we calculate this exposure?] Basically, we compute a county-level average of the firm-level exposure calculated as the total number of bank relationships that the firm has with Commerzbank over its total bank relationships. This county-level measure varies from a minimum of 0.8% of exposure to around 24%.
+
+Individual Political Preferences
+
+[Now we need the other component, the individual preferences] We use the German Socio-Economic Panel, which is a well-established household survey representative of the German population, that collects data each year for around 30000 households across the country. Within this survey, among individual and household level characteristics, there are two amazing questions about individual political preferences.
+
+The first one is about political support or participation and I read it. It is particularly interesting to us because allows us to not looking at actual votes, but yerar-by-year intention to vote framing the question in order to elicit medium- or long-term political preferences
+
+The reminder of the question ask to point out a preference conditional to affirmative answer, which gives us the exact political preference at individual level.
+
+We use data from 2000 to 2016 year by year and through household identifiers we are able to link them to the region of residence in 2006 and other county-level macro variables using DeStatis and RegionalStatistik.
+
+German Political Spectrum
+
+[Last but not the least, let me give you a brief overview of the political scenario in Germany and how we evaluate populism]
+
+Germany has a political multi-party system, where Christian-liberal have been dominated for most of the period after the Reunification, characterized by ruling coalitions, which is particularly interesting to us because it expresses heterogeneity in the degree of populism expressed compared to the two-party system of the US for example. 
+
+[To define parties that are populist within this political spectrum, we borrow from the political science literature]: we use different expert surveys to identify three main populist parties.
+
+[Using this metric, we create the outcome variables we are going to use throughout the analysis.] One variable is an indicator variable equal to one if there is a pointed out populist preference from the previously introduced questions, the second is an indicator variable equal to one when the answer to the political support question is affirmative as a reminder.
+
+Effect of the Credit Shock on Populism
+
+[Now we go to the first part of the empirical analysis]
+
+We use a two-way fixed effects identification with heterogeneous treatment effects, where the treatment is the exposure variable we previously calculated at county-level k interacted with a dummy which is equal to one from 2009 onwards. The unit of observation is the individual i resident in county k in 2006 observed at time t.
+
+We use county and time fixed effects, and we control for individual- household- and county-level characteristics measured in 2006
+
+The coefficient of interest measures then the effect of having a higher exposure to the credit shock at the time of the lending cut on individual outcomes (political support and intention to vote for a populist party) compared to having a lower exposure beforehand. 
+
+Just to keep in mind, we use sampling weights to account for survey stratification and non-response rate, we keep individuals that are eligible to vote in 2006 and we keep them fixed throughout the panel, such that attrition lies only on the tails. As our treatment variable is at county level, we cluster at county level.
+
+Positive Effect of the Credit Shock on Political Preferences
+
+[As the title suggest, we find a positive and significant effect of the credit shock on individual political support and intentionn to vote for a populist party]
+
+Here we have three different specifications of the previous equation, the first includes just basic controls like age polinomial, schooling and employment, the second includes household-level controls as disposable income, numerosity, home-ownership, outstanding loans, etc., while the third also includes macro-level characteristics as population density, average income, share of foreigners and so on.
+
+Robustness: Pre-Trends
+
+[To convince you about the absence of pre-trends, here I have prepared a graph to illustrate that.] As you can see it is pretty safe to say that there are no pre-trends before the shock (even though year estimates are noisy due to the sample, household weights and clustering, which allows the parallel trends to hold.
+
+Robustness: Additional Remarks
+
+[As a reminder,] we tried to see whether there are differences in estimates between rural and urban areas as the political science literature suggests, but we do not find any important difference
+
+[Then,] The results are kept unconditional on the indication of political preference to preserve sample size (so also very conservative also given the ITT): when we condition the variable, so considering only those individuals that affirmatively answer the question, we still have robust results of higher magnitude, around 1.3pp. 
+
+[Finally, we performed also ] placebo tests about the timing of the lending cut, as it starts in the third quarter of 2008. Changing the starting year to 2008, it provides still significant results but of lower magnitude.
+
+Supply Side Response to Shift in Populism Demand
+
+[Ok, now that we have a positive effect on populism, we want to understand how the supply of populism responded to this surplus in demand, and we want to do it taking as step back from a binary classification of populism but rather using a non-binary classification, which comes from the data]
+
+[How do we do that] We use a text analysis pipeline incorporating topic modelling. For those familiar with topic models in computational linguistics, we use seededLDA as it is very convenient for us. With that we extract populist rhetoric and banking-related topics from the text data, we create a continuous text-based index at a party level of rhetoric and policy discourse and we match those index with the individual political preferences and we re-estimate the main specification
+
+[As robustness] we adopt alternative text data, dictionary techniques based on the same seeds of the topic model and we also use different seeds for populism
+
+Plenaries and Electoral Campaigns
+
+[The text corpora we use in this stage are]
+
+Parliamentary Speeches from the ParlSpeech v2, a full-text corpora of 6.3 million parliamentary speeches in the key legislature chambers of 9 different representative democracies, of which more than 370,000 are from MPs of the German Bundestag from the Reunification to 2018
+
+As robustness, we adopt electoral manifestos from the Comparative Manifesto Database, but the drawback of those data is that they are much more uniform and they come just for the national elections, which reduces a lot the sample when we go to match the data
+
+Measuring Rhetoric and Discourse
+
+[So how do we measure rhetoric and discourse? Here I provide a flowchart which illustrates our algorithm, I will try to be brief]: The most important parts are the topic model and the aggregation at year-party level from the output of the topic models
+
+Raw data enter the algorithm and nuisance information is removed, then they enter as a matrix in the topic model which as I said is a seeded LDA. It is a semi-supervised statistical learning model which allows us to give a trace, the seeds, to the Bayesian network about the words that are going to be important within the topics we would like to identify in the text, and then the model identifies for each observed word and document a match with a specific topic. So, the important takeaway from this is that we obtain two posterior probabilities from this process, and in particular we obtain a per-topic posterior probability distribution of (unique) words, and based on that we can identify the words with the highest probability within each topic
+
+Based on that, we rank words within a topic and we create a bag of words for each topic, which are populism and banking-related issues, and we use those bag of words to calculate the year-party index of the specific topic as the sum of words of all documents in a year that are included in the bag of words over the total words of the documents for that year, and we obtain the indices 
+
+Time Party Variation in Populism Rhethoric
+
+[Ok, now that I have told you the boring part, let's look at what we obtain with this methodology] Here you can observe the time-party variation in populist rhetoric for each party in the German Bundestag from 1991 to 2018, and as you can see there is a lot of variation among years and across parties. The non-binary classification validate LINKE and AfD as the most populist parties, in particular after the lending cut, but there is interesting variation in the degree of populism of all parties, with CDU reacting less after 2009 compared to the other parties, where surprisingly the Greens are somewhat populist]
+
+Time Party Variation in Populism Rhetoric
+
+[On the contrary, ] we observe a general upward trend in policy discourse on banking related issues, which is going to be interesting when matched together with populist rhetoric
+
+Positive Supply Side Response to the Shock
+
+[Now we show the final result for the supply side response, obtained with the same idenntification we illustrated before where the outcome variable is the year-party index matched with the relative ]

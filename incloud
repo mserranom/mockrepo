@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# this is a custom made git CLI command for the repo to sync 
+# the data directory of the repository (git ignored) in my cloud every time
+# a change is noticed after committing
+
+SOURCE=$(git rev-parse --show-toplevel)/data/
+
+# sometimes the connecting volume to Google Drive for some reason switches
+# name, so we deal with the condition
+if [ -d '/Volumes/Google Drive' ]
+then 
+    TARGET='/Volumes/Google Drive/My Drive/Documents/Datasets/projects'
+else
+    TARGET='/Volumes/GoogleDrive/My Drive/Documents/Datasets/projects'
+fi
+
+PROJECT_NAME=$(basename `git rev-parse --show-toplevel` | tr '[:upper:]' '[:lower:]')
+TARGET+=/$PROJECT_NAME/
+rsync -uavc "$SOURCE" "$TARGET"

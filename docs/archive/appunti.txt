@@ -1,0 +1,37 @@
+Text-As-Data Conference Slides
+
+Differences with the Nazi paper
+While we look at populism rhetoric as spread across all parties, and how those are rewarded by the credit shock and not a bank default, they look at the electoral success of one single party i.e. the Nazi party at the aftermath of a bank default. While the populist rhetoric might have affected also the rise of the Nazi party, they do not look into the specific aspect, rather they combine the impact of financial distress and cultural features (represented by the Jewish chairman of Danatbank) in fueling anti-Semitism for the Nazi propaganda.
+
+[Intro Motivation Contribution] In the notes inside my checked baggage.
+
+[Main Findings]
+We find a positive effect of the credit shock on revealed political preferences and the likelihood to support a populist party. Therefore, the credit shock plays a minor but significant role on the rise of populism in modern Germany.
+(Results are robust to different specifications)
+The demand shift rewards parties that a) adopt a more populist rhetoric, and b) focus more on banking-related topics. From this point of view, voters are not ``blinded'' by the populist rhetoric, as they are also sensitive to the topics populist discuss.
+
+(tentative) As the credit shock has no direct effect on the household's credit market, the effect is preponderantly driven by local labour market shocks, measured as regional unemployment. This goes in line with the sociotropic reaction mechanism. 
+
+[Background] Let me introduce to you the underlying scenario regarding our empirical analysis..
+Credit in Germany has been particularly stable compared to similar developed countries: it was not affect by any significant house prices boom or decline, endogenous bank panic, sovereign debt crisis before or during the GFC and showing relatively little uncertainty. However, the credit market was characterised by a sharp drop in bank lending starting in 2010 [show picture of Huber]
+Commerzbank generated an unexpected credit crunch unrelated to the domestic economic condition (Huber, 2018), anticipating the wider downturn of the domestic credit [show picture of Huber].
+The shock was driven by significant losses in the international trading books in 2008-09 that led to a fall in equity capital, mostly triggered by the exposure on asset-backed securities related to the United States subprime mortgage crisis and magnified by the insolvency of Lehman Brothers and the Icelandic banks in 2003Q3.
+The lending cut was temporary but necessary to comply with Basel II's regulation on Tier 1 Capital Ratio.
+
+Following the shock, we observe a rise of populism in Germany. Germany is particularly interesting because, compared to the American two-party system where you can evaluate just two major candidates, it offers more room for diversification and presents both left- and right-wing populism. In particular, populist parties gained paramount attention during the elections of 2013 and 2017.
+
+[Data] Before introducing our methodology to you, it is more convenient to give an overview of the data we are analysing for the sake of our project..
+We use survey data from the German Socio-Economic Panel (SOEP) which is a well-establish nationally representative longitudinal household survey, that contains questions on individual preferences on voting and political participation, as well as individual and household characteristics. We isolate the waves from 2000 to 2016, and we combine them with county-level identifiers for each individual and county level variables from DeStatis and RegionalStatistik.
+We use firm-level data from the Amadeus database of Bureau Van Dijk. These include information on the bank accounts held by each firm established before 2006, which goes from a minimum to zero to a maximum of seven. We verify whether each firm has at least a bank account with Commerzbank. Our database has a total of $950,000$ bank accounts, $99,000$ of which are Commerzbank's.
+We borrow state-of-tbe-art literature from political science to identify the main left- and right-wing populist parties within our time window of analysis [List parties]
+
+[Update Summary Statistics]
+
+[Methodology I]
+Using the firm-level data, we create a measure of Commerzbank exposure at county-level as a proxy for exposure to the credit shock [show formula], which is simply a county-level average of the firm-level exposure to Commerzbank measured as the total number of bank accounts that a firm has with Commerzbank branches over the total bank accounts that the firm holds. 
+
+[Methodology II] As we introduce our intensity-to-treatment measure, we propose the following identification strategy, with an unorthodox difference-in-differences approach similar to many contemporary papers (e.g. see Clément de Chaisemartin and Xavier D’Haultfœuille 2020). [introduce model and change equation as in the new draft]
+
+[Main Results] [Link Slide Robustness Checks]
+
+

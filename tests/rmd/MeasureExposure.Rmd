@@ -1,0 +1,2854 @@
+---
+title: "Measuring Exposure to the Credit Shock"
+author: "Alessandro Pizzigolotto"
+institute: "Norwegian School of Economics (NHH)"
+bibliography: "`r here::here('docs', 'references', 'CreditPopulismRefs.bib')`"
+csl: "`r here::here('docs', 'references','harvard.csl')`"
+date: "_Last Updated_: `r format(Sys.Date(), '%d %B, %Y')`"
+github:
+    user: chickymonkeys
+    repo: CreditPopulism
+    branch: main
+output:
+    rmdformats::readthedown:
+        highlight: kate          # syntax highlighting format
+        number_sections: false   # sections numbering
+        fig_retina: 2            # rescaling for retina displays
+        fig_caption: true        # allow captions
+        dpi: 300                 # minimum dpi for nice printing
+        df_print: kable          # print tables with kableExtra package
+        code_folding: hide       # code hidden by default when visible
+        citation_package: natbib # citation package natbib
+        self_contained: true     # graphics for standalone HTML files
+        use_bookdown: true       # referencing tables and figures
+---
+
+<style>
+
+#main p, #main li, #main ul {
+  text-align: justify;
+}
+
+#content {
+  max-width: none;
+}
+
+</style>
+
+```{r setup, include = FALSE}
+## -----------------------------------------------------------------------------
+## Setup Chunk and Package Loading
+##
+
+## Global RMarkdown Chunk Options
+knitr::opts_chunk$set(
+    echo = FALSE,
+    message = FALSE,
+    warning = FALSE,
+    error = FALSE,
+    tidy = FALSE,
+    cache = FALSE,
+    results = "asis"
+)
+
+## Chunk Aliases and Root Directory
+knitr::opts_knit$set(
+    root.dir = here::here(),
+    aliases = c(
+        h = "fig.height", # height of figure
+        w = "fig.width", # width of figure
+        oh = "out.height", # height of output
+        ow = "out.width", # width of output
+        pos = "fig.align", # figure alignment
+        cap = "fig.cap", # figure long caption
+        float = "fig.subcap", # figure sub-caption w/ float
+        cols = "fig.ncol", # number of columns in float
+        sep = "fig.sep" # figures separator
+    )
+)
+
+## Package Loading
+pacman::p_load(
+    dplyr, # tidyverse: general data manipulation
+    tidyr, # tidyverse: tidy messy data
+    stringr, # tidyverse: string manipulation
+    stringdist, # string distance calculation for R
+    glue, # go easy with strings
+    skimr, # summarize data
+    gt, # making flexible tables from table data
+    gtsummary, # summarize statistics
+    kableExtra, # enhanced kable tables
+    ggplot2, # big boy for graphs
+    tmap, # static and interactive simple maps
+    tmaptools, # thematic map tools
+    collapse, # C++ based functions and data manipulation
+    data.table, # extended data.frame
+    sf, # simple features
+    readr, # read delimited files into tibble
+    fst, # fast storage serialization of data.frame(s)
+    RPostgres, # connector for PostgreSQL database
+    haven # handle Stata and SAS data
+)
+
+## Include user-defined functions to calculate exposure
+source(here::here("src", "exposure", "exposureFunctions.R"))
+```
+
+## Description of Firm-Level Data in Amadeus
+
+All the firm-level information we are exploiting comes from Amadeus. The database is one of the products in Bureau van Dijk's Osiris -- together with Bankscope, Isis and Orbis -- and provides comprehensive information for approximately 19 million companies in both Western and Eastern Europe. It is not a historical database as it strives for recent information. Financial data from companies within Amadeus are retained fro a rolling period of 8 years. When a new year of data is added, the oldest set of data is dropped, meaning only the most recent data for each company is available. Banks and financial companies are generally excluded from the database, such that the reminder is only commercial companies. Companies are generally excluded from the database, such that the reminder is only commercial companies. Companies are defined in different categories by their **operating revenue, total assets, and number of employees**: **small**, **medium**, **large** and **very large**, handled in separate tables of the database. In addition to financial data, the database provides information cross-sectional information about the bankers the company has relationships with. Those bank relationships are crucial for the measure of the credit shock we are studying, proxied by the county-level Commerbank dependence. To cite these data, we can use the following format: _Wharton Research Data Services. "WRDS" wrds.wharton.upenn.edu, accessed X_.
+
+From @bib:kalemli-ozcan2015 we understand some _ex ante_ limitations of the Amadeus database. It will delete a company from the database if the company did not report anything in the last 5 years, contrary to Orbis that keeps the company as long as it is active in the business register. It would lead to a survivorship bias in our underlying firm-level data, meaning that we can achieve a better representative sample combining both Amadeus and Orbis. There is a reporting lag of two years, on average, and there are differences in the coverage of particular variables depending on when the BvD product has been released. Hence, for the 2010 vintage, the company may not have the 2010 filings but the 2010 filings would appear in the 2012 vintage. For our purpose, it means that we might look into financials until 2008 when referring to 2006 financials. Moreover, BvD's data collection improves over time and hence this lag might vary by country and data vintage.
+
+Additionally, it can be possible that there are multiple financial records for a single closing data due to double reporting of both consolidated and unconsolidated financial variables. There is no perfect solution in using only consolidated or unconsolidated accounts. However, it is possible to identify the consolidation type from the variables `repbas` in the financials table, and `consol` in the company information, which can be:
+
+- `C1`: only consolidated accounts,
+- `U1`: only unconsolidated accounts,
+- `C2`: both consolidated and unconsolidated, and those coded as C2 are the consolidated ones,
+- `U2`: both consolidated and unconsolidated, and those coded as U2 are the unconsolidated ones,
+- `LF`: limited financial information.
+
+After talking with Kilian Huber, we understand that the original data on bank relationships in his paper from Creditreform are not available anymore for research purposes, so we have no other option than to use Amadeus data. The plan is to check later whether our measure is highly correlated to his measure, both at firm- and county-level, or good enough to use it as a proxy of the correct measure of Commerzbank dependence. The same procedure applies in @bib:berg2021, where they analyse spillovers effects in corporate finance using Amadeus bank relationships and financial data at 2007. It relies on the assumption of long-term stickiness of bank relationships, well documented in @bib:chodorow-reich2014 as in Kilian's and Tobias' papers.
+
+## Data Extraction using the Wharton Research Data Services (WRDS)
+
+Our connection to the Amadeus database is provided by the Wharton Research Data Services, via our universities' subscription. We need to set up the handshaking to the database in R using PostgreSQL driver. In the older version of my code in Stata, we were using the ODBC driver straight into Stata.
+
+```{r, wrds-connection, echo = TRUE, eval = FALSE}
+# this is initializes the database connection with the WRDS,
+# it can also go in the project's .Rprofile config.
+wrds <- RPostgres::dbConnect(Postgres(),
+    host = "wrds-pgdata.wharton.upenn.edu",
+    port = 9737,
+    dbname = "wrds",
+    sslmode = "require",
+    user = "alepizzigolotto"
+)
+```
+
+For the data extraction we are interested in three tables of the database, which are unique tables for each firm size category.
+
+- _amadeus\_x_ table contains information on company profiles. Among all the variables available, we extract the ID `idnr` and the name `name` of the company, the `zipcode` of the location of the factory, together with the `address`, `region` -- which indicates the _landkreis_ -- and `city`, the incorporation date and year `dateinc`, the legal status `lstatus` and when the status has changed, the NACE, NAICS and SIC primary codes (`nace_prim_code`, `naics_core_code` and `ussic_core_code`). We retrieve the firm size flag `ftype` from the table which we interrogate in the database.
+- _financials\_x_ table contains the unbalanced panel of financial data for each firm kept in the sample at the time of interrogation. We are using those information to understand more about the firm balance sheets, grouping at county level and by firm size flag, using some of those information to weight the county-level Commerzbank dependence at firm level. We retrieve the number of employees `empl`, total assets `toas`, current loans `loan`, long-term debt `ltdb`, cost of employees `staf` - from which we can obtain the average wage -, shareholders funds and liabilities `tshf` (right-hand side of balance sheet), shareholders funds `shfd` (equity), liquidity ratio `liqr`, solvency ratio `solr`, current assets `cuas`, current liabilities `culi`, working capital `wkca`, and operating revenue `opre` (and more in the database).
+- _bankers\_x_ table contains cross-sectional information about each firm's bank relationships, where the only information available is the name of the bank `bnk_name`, from which we can identify which relationships are with Commerzbank and which are not.
+- (optional) _subsidiaries\_x_ table contains among all companies in Amadeus the information relative subsidiaries within the database, with their name `subs_name`, their id number `subs_bvdepnr`, the city `subs_city`, status `subs_status`, date of information `subs_date`, the total assets `subs_toas` and number of employees `subs_empl`, and the closing date `subs_clos`.
+
+```{r, amadeus-vars, eval = FALSE}
+# amadeus_x company variables
+company_vars <- c(
+    "idnr", "name", "name_nat", "address", "address_nat", "city",
+    "city_nat", "region", "region_nat", "zipcode", "lstatus",
+    "statusdate", "statusdate_year", "dateinc", "dateinc_year",
+    "consol", "nace_prim_code"
+)
+# bankers_x company's banks, idnr is the key to join with company vars
+bankers_vars <- c("bnk_name", "compcat", "country", "idnr")
+# financials_x company's financials
+financials_vars <- c(
+    "idnr", "empl", "closdate", "closdate_year", "repbas",
+    "toas", "loan", "ltdb", "staf", "tshf", "shfd", "liqr",
+    "crpe", "solr", "opre", "wkca", "cuas", "culi"
+)
+# subsidiaries_x company's information
+subsidiaries_vars <- c(
+    "idnr", "subs_name", "subs_bvdepnr", "subs_city",
+    "subs_status", "subs_date", "subs_toas", "subs_empl",
+    "subs_clos"
+)
+```
+
+With our function `get_amadeus(db, table, vars, type, cond)` we can retrieve data from the Amadeus database via the `db` pre-initialized connection object to WRDS PosgreSQL server, the selected table `table`, the firm size flag `type` and some conditions for the SQL query as arguments. We collect all data for all firms from Germany that are in Amadeus in a list with the following script.
+
+&#128721; **FIXME** put this part of the code and the entire script in a separate script for the pipeline!
+
+```{r, get-amadeus-data, echo = TRUE, eval = FALSE}
+# same condition for everybody and then we merge later using the
+# incorporation year to filter only the firms active before the 2007
+cond <- "WHERE country = 'GERMANY'"
+# firm types in Amadeus
+firm_types <- c("v", "l", "m", "s")
+# company info, financials, bankers
+tables <- c("amadeus", "financials", "bankers", "subsidiaries")
+vars <- list(company_vars, financials_vars, bankers_vars, subsidiaries_vars)
+amadeus_data <- list()
+for (t in 1:length(tables)) {
+    amadeus_data[[t]] <- list()
+    for (s in 1:length(firm_types)) {
+        amadeus_data[[t]][[s]] <- get_amadeus(
+            wrds, tables[[t]], vars[[t]], firm_types[[s]], cond
+        )
+    }
+    amadeus_data[[t]] <- rbindlist(amadeus_data[[t]])
+}
+```
+
+We save the data in four separate _.fst_ files to be able to reuse them. I have disabled the code here because I have already exported all data from Amadeus in the separate files to work locally without connecting to the database. You can find the last update in the `README.md` file in the `ROOT/data/firms` directory.
+
+```{r save-amadeus-data, eval = FALSE}
+fst::write_fst(amadeus_data[[1]], here::here(
+    "data", "firms", "amadeus", "amadeus_companies.fst"
+))
+fst::write_fst(amadeus_data[[2]], here::here(
+    "data", "firms", "amadeus", "amadeus_financials.fst"
+))
+fst::write_fst(amadeus_data[[3]], here::here(
+    "data", "firms", "amadeus", "amadeus_bankers.fst"
+))
+fst::write_fst(amadeus_data[[4]], here::here(
+    "data", "firms", "amadeus", "amadeus_subsidiaries.fst"
+))
+# unload list
+amadeus_data <- NULL
+```
+
+```{r, read-amadeus-data}
+companies <- as.data.table(
+    fst::read_fst(
+        here::here("data", "firms", "amadeus", "amadeus_companies.fst")
+    )
+)
+financials <- as.data.table(
+    fst::read_fst(
+        here::here("data", "firms", "amadeus", "amadeus_financials.fst")
+    )
+)
+bankers <- as.data.table(
+    fst::read_fst(
+        here::here("data", "firms", "amadeus", "amadeus_bankers.fst")
+    )
+)
+```
+
+The raw data consists of a total of `r nrow(companies)` unique companies of which we have `r nrow(financials)` unbalanced financial entries, from virtually `r financials[, min(closdate_year)]` to `r financials[, max(closdate_year)]`, and `r nrow(bankers)` cross-sectional bank relationships.
+
+## Each Firm Belongs to His County: Matching Procedure
+
+The company profile data in Amadeus provide us with different information to perform the matching with the county of their location. In order of relevance, the first information we get is the ZIP code, then we have their region, their city, and eventually their address. This order is given by the quality of the information available, as information can be missing, not updated, or misleading, whereas the ZIP code is pretty stable.
+
+```{r head-companies-view}
+kableExtra::kbl(head(companies[
+    , .(idnr, name_nat, zipcode, address_nat, region_nat, city_nat)
+], 10),
+caption = glue::glue(
+    "View of the extracted company profile information ",
+    "from Amadeus including the company code, the ",
+    "original name, ZIP code, address, ",
+    "region and city."
+)
+) %>%
+    kableExtra::kable_styling(
+        bootstrap_options = c("striped", "condensed", "responsive")
+    )
+```
+
+### ZIP Codes -- County Name -- Village Name -- County Codes Matching Table
+
+We use data from the [Postleitzahlen Deutschland](https://www.suche-postleitzahl.org/), which provides an accurate matching table between ZIP codes and KKZ codes, the county identifiers that are also used in the German Socio-Economic Panel. From these data, we obtain for each ZIP code `plz` the corresponding county code `ags`, the Landkreis name `landkreis` (if it is a landkreis), the Bundesland name and the location name `ort`. We keep KKZ at county level (five digits).
+
+```{r, kreise-zipcode-table, echo = TRUE, eval = FALSE}
+# load from website the .csv file with the matches
+kreise_codes <- read.csv(
+    url(glue::glue(
+        "https://www.suche-postleitzahl.org/",
+        "download_files/public/zuordnung_plz_ort_landkreis.csv"
+    ))
+) %>%
+    as.data.table()
+# keep KKZ codes at county level in five digits
+kreise_codes[, kkz := str_sub(
+    fifelse(str_length(ags) == 7, paste0("0", ags), as.character(ags)), 1, 5
+)]
+# in the .do file we put Landkreis and Kreis at the end of the string
+# we do it here as well and then let's see
+kreise_codes[, names := fifelse(
+    str_trim(landkreis) == "", paste0(ort, " Stadt"),
+    str_replace(landkreis, "(Landkreis|Kreis|Eifelkreis)\\s(.+)", "\\2 \\1")
+)]
+```
+
+```{r, save-kreise-zipcode-table, eval = FALSE}
+fst::write_fst(kreise_codes, here::here(
+    "data", "counties", "zipcodes_counties.fst"
+))
+```
+
+```{r, load-kreise-zipcode-table}
+kreise_codes <- as.data.table(
+    fst::read_fst(here::here("data", "counties", "zipcodes_counties.fst"))
+)
+```
+
+```{r head-kreise-zipcode-table-view}
+kableExtra::kbl(head(companies[
+    , .(idnr, name_nat, zipcode, address_nat, region_nat, city_nat)
+], 10),
+caption = glue::glue(
+    "View of the ZIP Code -- County Code -- Landkreis ",
+    "Name -- Village Name Table coming from the ",
+    "Postleitzahlen Deutschland website."
+)
+) %>%
+    kableExtra::kable_styling(
+        bootstrap_options = c("striped", "condensed", "responsive")
+    )
+```
+
+### First Step: ZIP Code Matching
+
+First, we try to match all companies with their county code using the ZIP codes indicated in the Amadeus database.
+
+```{r, match-zipcodes-companies, echo = TRUE}
+# matching table zip-kkz keeping unique values in the previous data
+match_zips <- unique(kreise_codes[, .(plz, kkz)])
+# we keep zip code as integer
+companies[, zipcode := as.integer(zipcode)]
+# double check that Landkreis and Kreis are at the end of the
+# A[B, on = 'a', bb := i.b], join A with B and upddate A by reference
+companies[match_zips, on = .(zipcode = plz), kkz := i.kkz]
+```
+
+### Second Step: String Fuzzy Matching with County Names
+
+After matching ZIP codes with the information in the Amadeus' companies, we are left with `r nrow(companies[is.na(kkz)])` unmatched firms. For most of them (`r nrow(companies[is.na(kkz) & !is.na(region_nat)])`) we have information of the region where those firms are located. We can use UTF-8 original names for the match, contrary to Stata that messes up all the time with strings. After some adjustments of the string names, we run a Jaro-Winkler distance algorithm to fuzzy matching the region name of firms without a match with the ZIP code (or missing ZIP code) with the region names in the matching table, specified in _Landkreis_ for most of all the rural areas and _Stadt_ for most of all the urban areas. We select for each unmatched companies' region name the county name with the smallest distance in the matching table. The Jaro-Winkler distance is not perfect, so we need to perform some manual changes to fit the names after the fuzzy matching procedure. 
+
+```{r, match-countyname-companies, echo = TRUE}
+# reverse epithets of counties just in case
+companies[, region_nat := str_replace(
+    region_nat, "(Landkreis|Kreis|Eifelkreis)\\s(.+)", "\\2 \\1"
+)]
+# select from the matching table only names and county codes
+match_names <- unique(kreise_codes[, .(kkz, names)])
+# select only the region names for unmatched firms in the step before
+unmatched_regions <- data.table(
+    names = unique(companies[is.na(kkz) & !is.na(region_nat), region_nat])
+)
+# create grid for matching each region name with names in the matching table
+scores <- expand.grid(unmatched_regions[, names], match_names[, names])
+# run Jaro-Winkler string distance function
+scores$dist <- stringdist::stringdist(scores$Var1, scores$Var2, method = "jw")
+colnames(scores) <- c("region_nat", "names", "dist")
+# there are some region names that are Bundesland names and we remove it
+states <- unique(kreise_codes[bundesland != "Berlin", bundesland])
+# select the name with the smallest distance for each region name
+match_names <- scores %>%
+    dplyr::filter(!(region_nat %in% states)) %>%
+    dplyr::group_by(region_nat) %>%
+    dplyr::arrange(dist) %>%
+    dplyr::slice(1) %>%
+    dplyr::select(region_nat, names) %>%
+    as.data.table()
+# add county codes back from the matching table
+match_names[kreise_codes, on = .(names), kkz := i.kkz]
+# manual corrections
+match_names[region_nat %like% "München  Landeshaupt", names := "München Stadt"]
+match_names[region_nat %like% "Lauenburg", names := "Herzogtum Lauenburg Kreis"]
+match_names[region_nat %like% "Neuss", names := "Rhein-Neuss Kreis"]
+match_names[region_nat %like% "Wendel", names := "St. Wendel Landkreis"]
+# add county codes to the unmatched companies
+companies[
+    match_names,
+    on = .(region_nat), kkz := fifelse(is.na(kkz), i.kkz, kkz)
+]
+```
+
+### Third Step: String Fuzzy Matching with "City" Names
+
+After using strings with region names for the match of companies with their county code, we still have `r nrow(companies[is.na(kkz)])` unmatched firms. Of those firms, `r nrow(companies[is.na(kkz) & !is.na(city_nat)])` have information about the city where the firm is located. First, we search for perfect match of of companies' city names that are unique at county level in the matching table for Germany as a whole. Second, we use the Jaro-Winkler distance again combining information on the city with the Bundesland in the matching table to assign county codes for the remaining cities.
+
+```{r, match-cityname-companies, echo = TRUE}
+# select the city of firms that are left unmatched
+unmatched_cities <- unique(
+    companies[is.na(kkz) & !is.na(city_nat), c("city_nat", "region_nat")]
+)
+# select cities by couinty codes and their Bundesland
+match_cities <- unique(kreise_codes[, .(kkz, ort, bundesland)])
+# count towns with the same name for an indicator
+match_cities[, n_cities := .N, by = .(ort)][, city_nat := toupper(ort)]
+# exact match cities in the unmatched firms, when cities has unique name
+unmatched_cities[
+    match_cities[n_cities == 1, .(kkz, city_nat)],
+    on = .(city_nat), kkz := i.kkz
+]
+
+# fuzzy matching for remaining cities using bundesland names
+match_cities[, names := paste0(city_nat, " - ", toupper(bundesland))]
+scores <- expand.grid(
+    unique(unmatched_cities[is.na(kkz), city_nat]), match_cities[, names]
+)
+scores$dist <- stringdist::stringdist(scores$Var1, scores$Var2, method = "jw")
+colnames(scores) <- c("city_nat", "names", "dist")
+scores <- scores %>%
+    dplyr::group_by(city_nat) %>%
+    dplyr::arrange(dist) %>%
+    dplyr::slice(1) %>%
+    dplyr::select(city_nat, names) %>%
+    as.data.table()
+# manual correction of bad matching
+nuisance_cities <- c(
+    "SENSBACHTAL", "RIEZLERN", "HIRSCHEGG", "TWIEFLINGEN",
+    "HOYERSHAUSEN", "ZÖBLITZ", "WIES", "NEUNKIRCHEN",
+    "HELSINKI", "SACHSEN", "KUOPIO", "TAMPERE"
+)
+scores <- scores[!(city_nat %in% nuisance_cities)]
+# manual correction city mismatch
+city_mismatch <- c(
+    "LICHTE", "HADMERSLEBEN", "BRANDENBURG", "MARL", "VOERDE",
+    "FREIBURG", "LUDWIGSHAFEN", "ST. WENDEL", "MUNICH"
+)
+city_correction <- c(
+    "Sonneberg - Thüringen", "Oschersleben - Sachsen-Anhalt",
+    "Brandenburg an der Havel - Brandenburg",
+    "Marl - Nordrhein-Westfalen",
+    "Voerde (Niederrhein) - Nordrhein-Westfalen",
+    "Freiburg im Breisgau - Baden-Württemberg",
+    "Ludwigshafen am Rhein - Rheinland-Pfalz",
+    "Sankt Wendel - Saarland", "München - Bayern"
+)
+for (s in 1:length(city_mismatch)) {
+    scores[city_nat == city_mismatch[s], names := toupper(city_correction[s])]
+}
+
+scores <- merge(scores, match_cities[, .(names, kkz)], by = "names")
+unmatched_cities[
+    scores[, .(kkz, city_nat)],
+    on = .(city_nat),
+    kkz := fifelse(is.na(kkz), i.kkz, kkz)
+]
+unmatched_cities <- unique(unmatched_cities[!is.na(kkz), .(kkz, city_nat)])
+# add county codes to the unmatched companies
+companies[unmatched_cities,
+    on = .(city_nat),
+    kkz := fifelse(is.na(kkz), i.kkz, kkz)
+]
+```
+Unfortunately, we have to manually correct some of the cities and, after merging back to the companies table, we have been able to match all but `r nrow(companies[is.na(kkz)])` firms, with a total of `r nrow(companies[!is.na(kkz)])` firms in the sample.
+
+```{r, remove-unmatched-firms}
+# remove unmatched firms
+companies <- companies[!is.na(kkz)]
+```
+
+### Fourth-Step: Harmonize county codes with the official German Socio-Economic Panel Recoded County Codes.
+
+The last operation to do is to match the county codes we have matched in the Amadeus sample with the county level codes contained in the German Socio-Economic Panel. In fact, the SOEP with county identifiers we access in the SOEPRemote has re-coded county codes keeping track of counties that have been merged at different points in time between 2000 and 2016, but never the inverse process. We have retrieved a table from the internal server at DIW Berlin that contains the matches between `KKZ` and `KKZ_REK`, namely the standard codes and the re-coded ones.
+
+```{r, soep-kkz-rek-table}
+soep_counties <- readr::read_delim(
+    here::here("data", "soep", "KKZ_KKZREK_Names_SOEPRemote.csv"),
+    delim = ";"
+)
+```
+
+We convert the county codes from string to numeric (as some of them they keep a zero in the front, which is not the case for the SOEPRemote codes), and we perform the match using the integer codes.
+
+
+```{r, update-kkz}
+# keep the string version of kkz code and create a numeric one for merging
+# with the SOEP codes containing the recoded versions
+companies[, kkz_char := kkz]
+companies[, kkz := as.numeric(kkz)]
+cols <- c("kkz_rek", "landkreis", "landkreis_rek")
+# match and update by reference
+companies[as.data.table(soep_counties), on = .(kkz), (cols) := mget(cols)]
+```
+
+```{r, save-match-kkz-companies, eval = FALSE}
+fst::write_fst(companies, here::here(
+    "data", "firms", "amadeus", "amadeus_companies_kkz.fst"
+))
+```
+
+```{r, load-matched-companies-data, eval = FALSE}
+companies <- as.data.table(
+    fst::read_fst(here::here("data", "firms", "amadeus_companies_kkz.fst"))
+)
+```
+
+## Firm Selection and Bank Relationships
+
+After matching the universe of firms to their county in the Amadeus database, we subset for those firms that were established before 2007 for which we have information of bank relationships. This is our way to identify firms active on the eve of the credit shock happening in 2008Q3, and the year at which @bib:huber2018 collects the bank relationships. After filtering, we count the number of bank relationships for each firm, and how many of those relationships are with Commerzbank using string matching on the name, and we assign back the values to our firms. The row _bankers_ table looks as the following before subsetting information for the firms we are interested of.
+
+```{r head-bankers-view}
+kableExtra::kbl(head(bankers, 10),
+    caption = glue::glue(
+        "View of the extracted company bank ",
+        "relationships from Amadeus."
+    )
+) %>%
+    kableExtra::kable_styling(
+        bootstrap_options = c("striped", "condensed", "responsive")
+    )
+```
+
+
+```{r, firm-bank-relationships, results = FALSE}
+# for code efficiency we filter directly into the bankers table for the firms
+# that have been around before 2007 and then joining on companies
+# we filter firms that have been around before 2007 and right join on bankers
+accounts <- bankers[idnr %in% companies[dateinc_year < 2007, idnr], ]
+# count total number of accounts per firm and how many are with Commerzbank
+accounts[, total_relationships := .N, by = .(idnr)]
+accounts[, cbk_relationships := fifelse(
+    tolower(bnk_name) %like% "commerzbank", 1, 0
+)]
+# count total number of accounts with Commerzbank per firm by collapsing
+accounts <- accounts[, .(cbk_relationships = sum(cbk_relationships)),
+    by = .(idnr, total_relationships)
+]
+# new data.table object with the cross-section of our firm sample
+exposure_data <- companies[accounts, on = .(idnr)]
+```
+
+Filtering firms established before 2007 leaves us with a total of `r nrow(companies[dateinc_year < 2007, .(idnr)])` firms. Merging the bank relationships with this sub-sample of firms makes us losing `r nrow(companies[dateinc_year < 2007, .(idnr)]) - nrow(exposure_data)` firms, of which we have no information connected abbout the bank accounts, remaining with a total of `r nrow(exposure_data)`. We obtain a total of `r nrow(accounts[, sum(total_relationships)])`, of which `r nrow(accounts[, sum(cbk_relationships)])` are with Commerzbank (`r round(accounts[, sum(cbk_relationships)] / accounts[, sum(total_relationships)], 4) * 100`%). We use the strings in `bnk_name` to identify Commerzbank. `r round(nrow(accounts[cbk_relationships == 0]) / nrow(accounts), 4) * 100`% of firms have no accounts with Commerzbank (which means that around `r round(nrow(accounts[cbk_relationships != 0]) / nrow(accounts), 2) * 100`% of the firms have a relationship with Commerzbank, roughly `r 25 - round(nrow(accounts[cbk_relationships != 0]) / nrow(accounts), 2) * 100` percentage points less than the relationships in Huber's paper). This is the first step for the creation of the measure of Commerzbank dependence, and the baseline for the firm-level measure.
+
+The following table summarizes for the firm sample the distribution of bank relationships across different firm size flags and the number of firms per county in each category. It is interesting to see that the largest part of our firm sample is dominated by small and medium firms with few bank relationships and fewer with Commerzbank. The median number of bank relationships is one or two, independently from the firm size flag. The histograms give the flavour of the distribution of the frequency of firms across firm type categories and in total.
+
+```{r, setup-gtsummary-theme-summary-statistics}
+summary_theme <- list(
+    "tbl_summary-str:default_con_type" = "continuous2",
+    "tbl_summary-str:categorical_stat" = "{n} ({p}%)",
+    "tbl_summary-str:continuous_stat" = c(
+        "{N_miss} ({p_miss})", "{mean}", "{sd}",
+        "{min}", "{median} ({p25} - {p75})", "{max}"
+    ),
+    "tbl_summary-arg:digits" = list(everything() ~ function(x) round(x, 3)),
+    "tbl_summary-fn:percent_fun" = function(x) style_percent(x, digits = 3),
+    "tbl_summary-arg:missing" = "no",
+    "style_number-arg:big.mark" = "",
+    "pkgwide-str:theme_name" = "Summary Tables by Group"
+)
+gtsummary::set_gtsummary_theme(summary_theme)
+gtsummary::theme_gtsummary_compact()
+```
+
+```{r, firm-bank-relationships-summary}
+# create sub-table for firms frequency per county by firm size
+firms_kkz <- exposure_data[, .(idnr, kkz_rek, ftype)] %>%
+    dplyr::group_by(kkz_rek, ftype) %>%
+    dplyr::summarize(nfirms = n()) %>%
+    dplyr::ungroup() %>%
+    tidyr::complete(kkz_rek, ftype, fill = list(nfirms = 0)) %>%
+    gtsummary::tbl_summary(
+        include = nfirms, by = ftype,
+        label = list(nfirms ~ "Number of Firms per County")
+    ) %>%
+    gtsummary::add_overall(last = TRUE)
+# create summary statistics for the number of bank relationships
+count_relationships <- exposure_data[
+    , .(idnr, ftype, total_relationships, cbk_relationships)
+] %>%
+    dplyr::mutate(ftype = dplyr::case_when(
+        ftype == "S" ~ "Small",
+        ftype == "M" ~ "Medium",
+        ftype == "L" ~ "Large",
+        ftype == "V" ~ "Very Large"
+    )) %>%
+    gtsummary::tbl_summary(
+        include = c("total_relationships", "cbk_relationships"),
+        by = ftype, type = cbk_relationships ~ "continuous2",
+        label = list(
+            total_relationships ~ "No. of Bank Relationships",
+            cbk_relationships ~ "No. of Relationships with Commerzbank"
+        )
+    ) %>%
+    gtsummary::add_overall(last = TRUE) %>%
+    gtsummary::modify_header(label ~ "**Variable**") %>%
+    gtsummary::modify_spanning_header(
+        all_stat_cols(stat_0 = FALSE) ~ "**Firm Size**"
+    )
+# stack sub-tables by firm size
+gtsummary::tbl_stack(list(count_relationships, firms_kkz)) %>%
+    gtsummary::modify_caption(
+        caption = glue::glue(
+            "Summary Statistics of firms from Amadeus ",
+            "which were established before 2007 and have ",
+            "signaled bank relationships in the ",
+            "database by firm size."
+        )
+    ) %>%
+    gtsummary::as_gt() %>%
+    gt::tab_style(
+        style = list(cell_fill(color = "#F8F6BD"), cell_text(style = "italic")),
+        location = cells_body(rows = row_type == "label")
+    )
+```
+
+```{r}
+#| histogram-firms-kkz, ow = "75%", fig.show = "hold", pos = "center",
+#| cap = "Histogram of the share of total number of firms per county by size
+#|    category (top) and in total (bottom).",
+#| float = c("Firms by Size Category (bins = 75)", "Total Firms (bins = 75)")
+frequency_firms_kkz <- exposure_data %>%
+    dplyr::group_by(kkz_rek, ftype) %>%
+    dplyr::summarize(firms_kkz = n()) %>%
+    dplyr::ungroup() %>%
+    tidyr::complete(kkz_rek, ftype, fill = list(firms_kkz = 0)) %>%
+    data.table() %>%
+    dcast(kkz_rek ~ ftype, value.var = "firms_kkz") %>%
+    dplyr::mutate(Total = L + M + S + V)
+# overlapping histograms of number of firms per county by
+# firm type flag truncating at 10000
+ggplot2::ggplot(frequency_firms_kkz[Total < 10000]) +
+    ggplot2::stat_bin(
+        aes(x = V, y = ..count.. / sum(..count..), fill = "vlarge"),
+        bins = 75, size = 0.25, alpha = 0.75, color = "#777777"
+    ) +
+    ggplot2::stat_bin(
+        aes(x = L, y = ..count.. / sum(..count..), fill = "large"),
+        bins = 75, size = 0.25, alpha = 0.75, color = "#777777"
+    ) +
+    ggplot2::stat_bin(
+        aes(x = M, y = ..count.. / sum(..count..), fill = "medium"),
+        bins = 75, size = 0.25, alpha = 0.75, color = "#777777"
+    ) +
+    ggplot2::stat_bin(
+        aes(x = S, y = ..count.. / sum(..count..), fill = "small"),
+        bins = 75, size = 0.25, alpha = 0.75, color = "#777777"
+    ) +
+    ggplot2::scale_fill_manual(
+        values = c(
+            small = "#EDE745", medium = "#EDB21D",
+            large = "#A2EB99", vlarge = "#048BA8"
+        ),
+        name = "",
+        labels = c(
+            small = "Small", medium = "Medium", large = "Large",
+            vlarge = "Very Large"
+        ),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    xlab("Number of Firms") +
+    ylab("Fraction") +
+    ggplot2::scale_x_continuous(n.breaks = 20) +
+    ggplot2::scale_y_continuous(n.breaks = 10) +
+    ggplot2::theme_minimal()
+# histogram of number of firms per county for all types
+ggplot2::ggplot(frequency_firms_kkz, aes(x = Total)) +
+    ggplot2::geom_vline(aes(xintercept = mean(Total)), color = "#777777") +
+    ggplot2::annotate(
+        geom = "label", x = mean(frequency_firms_kkz$Total), y = 0.2,
+        label = paste0("Mean:", round(mean(frequency_firms_kkz$Total), 3)),
+        hjust = -0.05, color = "#777777"
+    ) +
+    ggplot2::geom_histogram(aes(y = ..count.. / sum(..count..)),
+        bins = 75,
+        size = 0.25, alpha = 0.75,
+        fill = "#048BA8", color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 12) +
+    ggplot2::scale_y_continuous(
+        n.breaks = 10, labels = function(x) format(x, scientific = FALSE)
+    ) +
+    xlab("Number of Firms") +
+    ylab("Fraction") +
+    ggplot2::theme_minimal()
+```
+
+Using the bank relationships from Amadeus, we construct a simple measure of firm-level Commerzbank dependence exactly following @bib:huber2018. We obtain a slightly different distribution compared to the figure in his paper. It is probably because we are considering way more firms compared to his, with lower number of relationship banks per firm and more firms without any relationship with Commerzbank. It might be related to a higher presence of small and medium firms.
+
+```{r, simple-firm-exposure}
+exposure_data[, firm_exposure := cbk_relationships / total_relationships]
+```
+
+```{r}
+#| histogram-number-relationships,
+#| fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Histogram of the fraction of firms in the sample at a certain number
+#|    of bank relationships in total and only with Commerzbank."
+ggplot2::ggplot(exposure_data) +
+    ggplot2::geom_vline(
+        aes(xintercept = mean(total_relationships)),
+        color = "#777777"
+    ) +
+    ggplot2::annotate(
+        geom = "label", x = mean(exposure_data$total_relationships), y = 0.7,
+        label = paste0(
+            "Mean:", round(mean(exposure_data$total_relationships), 3)
+        ),
+        hjust = -0.1, color = "#777777"
+    ) +
+    ggplot2::stat_bin(aes(
+        x = total_relationships, y = ..count.. / sum(..count..), fill = "total"
+    ),
+    binwidth = 1, alpha = 0.75, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(aes(
+        x = cbk_relationships, y = ..count.. / sum(..count..), fill = "cbk"
+    ),
+    binwidth = 1, alpha = 0.75, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(
+        breaks = seq(
+            min(exposure_data$cbk_relationships),
+            max(exposure_data$total_relationships)
+        )
+    ) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.1)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c("#EDB21D", "#048BA8"),
+        labels = c("Commerzbank", "All Banks")
+    ) +
+    ggplot2::ylab("Share of Firms") +
+    ggplot2::xlab("Number of Bank Relationships") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .9))
+```
+
+```{r}
+#| histogram-firm-dependence,
+#| fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Distribution of firm-level Commerzbank dependence conditional and
+#|    unconditional on having at least one bank relationship with
+#|    Commerzbank in the sample."
+
+# fast mean values conditional on having relationships with commerzbank
+cond_value <- exposure_data %>%
+    dplyr::mutate(cond_exposure = ifelse(
+        cbk_relationships > 0, firm_exposure, NA
+    )) %>%
+    dplyr::summarize(
+        mean.zeroes = mean(firm_exposure),
+        mean.nozeroes = mean(cond_exposure, na.rm = TRUE)
+    )
+# firm-level Commerzbank Dependence from Amadeus data as Huber does
+exposure_data %>%
+    dplyr::mutate(cond_exposure = ifelse(
+        cbk_relationships > 0, firm_exposure, NA
+    )) %>%
+    ggplot2::ggplot() +
+    ggplot2::geom_vline(
+        aes(xintercept = mean(firm_exposure)),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::annotate(
+        geom = "label", x = cond_value$mean.zeroes, y = 0.7,
+        label = paste0(
+            "Mean (uncond.): ",
+            round(cond_value$mean.zeroes, 3)
+        ),
+        hjust = -0.05, color = "#777777"
+    ) +
+    ggplot2::geom_vline(
+        aes(xintercept = mean(cond_exposure, na.rm = TRUE)),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::annotate(
+        geom = "label", x = cond_value$mean.nozeroes, y = 0.5,
+        label = paste0(
+            "Mean (cond.): ",
+            round(cond_value$mean.nozeroes, 3)
+        ),
+        hjust = -0.05, color = "#777777"
+    ) +
+    ggplot2::stat_bin(aes(
+        x = cond_exposure, y = ..count.. / sum(..count..), fill = "nozeroes"
+    ),
+    bins = 30,
+    alpha = 0.75, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(aes(
+        x = firm_exposure, y = ..count.. / sum(..count..), fill = "zeroes"
+    ),
+    na.rm = TRUE, bins = 30,
+    alpha = 0.75, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(
+        breaks = seq(0, 1, 0.1), limits = c(NA, 1.05)
+    ) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.1)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c("#EDB21D", "#048BA8"),
+        labels = c("Conditional", "Unconditional")
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("Firm-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .95))
+```
+
+```{r}
+#| huber-firm-dependence, pos = "center",
+#| fig.dev = "svg", dpi = 500, out.width='75%',
+#| cap = "Histogram of firm-level Commerzbank dependence as calculated in Huber
+#|    (2018) from his firm sample."
+
+# we use pdftocairo on bash to vectorize and then Inkscape to modify it
+knitr::include_graphics(
+    here::here("docs", "pictures", "Huber_Firm_Dependence.svg")
+)
+```
+
+In the initial version of the draft for this project, we followed a similar structure for retrieving the firm data, matching them with their county codes and subset the firms established before 2007 and of which we have the bank relationships. The main difference was that we were matching after the first step (ZIP codes) with a more manual procedure using regional names. From that time - around June-July 2020 - some of the firms or bank relationships have been dropped from the database, and we did not save the full information of those firms but just the bank relationships, the identifiers and the four-digits industry code. We can compare the distribution of the firm-level Commerzbank dependence of those firms with the distribution in this sample we have recently retrieved.
+
+```{r, previous-firms-sample}
+past_firms_data <- haven::read_dta(
+    here::here("data", "firms", "amadeus", "firm_panel_KKZ.dta")
+) %>%
+    as.data.table()
+past_bankers <- past_firms_data[, .(idnr, bnk_name)]
+past_bankers[, total_relationships := .N, by = .(idnr)]
+past_bankers[, cbk_relationships := fifelse(
+    tolower(bnk_name) %like% "commerzbank", 1, 0
+)]
+past_bankers <- past_bankers[, .(cbk_relationships = sum(cbk_relationships)),
+    by = .(idnr, total_relationships)
+]
+past_firms_data <- unique(past_firms_data[, -c("plz", "bnk_name", "industry")])
+past_firms_data[
+    past_bankers,
+    on = .(idnr),
+    c("total_relationships", "cbk_relationships") := list(
+        i.total_relationships, i.cbk_relationships
+    )
+]
+past_firms_data[, firm_exposure := cbk_relationships / total_relationships]
+```
+```{r, update-past-firms-kkz}
+cols <- c("kkz_rek", "landkreis", "landkreis_rek")
+# match and update by reference
+past_firms_data[as.data.table(soep_counties), on = .(kkz), (cols) := mget(cols)]
+```
+
+In the past firm sample, we have `r nrow(past_firms_data) - nrow(exposure_data)` additional firms. It seems to be caused by a combination of firms that were dropped in the whole Amadeus database and updated to missing information in the bankers table. Trying to find the firms we previously retrieved in this sample leaves us with only `r nrow(merge(past_firms_data, companies, by = "idnr"))`. When it comes to the firm-level Commerzbank dependence distribution from the previous draft, it is very similar to the one we obtain with the current firms.
+
+```{r}
+#| histogram-firm-dependence-past-sample,
+#| fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Distribution of firm-level Commerzbank dependence conditional and
+#|    unconditional on having at least one bank relationship with
+#|    Commerzbank, using the firm data from the previous draft with the bankers
+#|    we retrieved at that time (Stata code)."
+
+# fast mean values conditional on having relationships with commerzbank
+cond_value <- past_firms_data %>%
+    dplyr::mutate(cond_exposure = ifelse(
+        cbk_relationships > 0, firm_exposure, NA
+    )) %>%
+    dplyr::summarize(
+        mean.zeroes = mean(firm_exposure),
+        mean.nozeroes = mean(cond_exposure, na.rm = TRUE)
+    )
+# firm-level Commerzbank Dependence from Amadeus data as Huber does
+past_firms_data %>%
+    dplyr::mutate(cond_exposure = ifelse(
+        cbk_relationships > 0, firm_exposure, NA
+    )) %>%
+    ggplot2::ggplot() +
+    ggplot2::geom_vline(
+        aes(xintercept = mean(firm_exposure)),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::annotate(
+        geom = "label", x = cond_value$mean.zeroes, y = 0.7,
+        label = paste0(
+            "Mean (uncond.): ",
+            round(cond_value$mean.zeroes, 3)
+        ),
+        hjust = -0.05, color = "#777777"
+    ) +
+    ggplot2::geom_vline(
+        aes(xintercept = mean(cond_exposure, na.rm = TRUE)),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::annotate(
+        geom = "label", x = cond_value$mean.nozeroes, y = 0.5,
+        label = paste0(
+            "Mean (cond.): ",
+            round(cond_value$mean.nozeroes, 3)
+        ),
+        hjust = -0.05, color = "#777777"
+    ) +
+    ggplot2::stat_bin(aes(
+        x = cond_exposure, y = ..count.. / sum(..count..), fill = "nozeroes"
+    ),
+    bins = 30,
+    alpha = 0.75, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(aes(
+        x = firm_exposure, y = ..count.. / sum(..count..), fill = "zeroes"
+    ),
+    na.rm = TRUE, bins = 30,
+    alpha = 0.75, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(
+        breaks = seq(0, 1, 0.1), limits = c(NA, 1.05)
+    ) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.1)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c("#EDB21D", "#048BA8"),
+        labels = c("Conditional", "Unconditional")
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("Firm-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .95))
+```
+
+## Firm-Level Weights for County Level Exposure
+
+In this section, we go through the weighting procedure for calculating the county-level Commerzbank dependence. Ideally, we want to take care of all the within-county heterogeneity among firms that cannot be controlled by county-level fixed effects when applying our main identification. Firms are clustered over two main dimensions when considering within-county variation, which are the **firm size**, divided in four categories, and **industry sector**. From previous section, firms with different size category do not present striking differences in the number of bank relationships and the number of those with Commerzbank, but can have different sensibility to a general credit shock in terms of liquidity availability. Moreover, we do not exactly know what means to be a firm of size X. On the other hand, firms within the same industry can present similar characteristics, especially when they are within the same regional boundaries. 
+
+### Two-Digits Industry Sectors in the Firm Sample
+
+From the companies profile, for each firm we have information of the four digits NACE v2 industry code. We group firms using the two-digit specification of industry sector to see the number of firms in the sample after restricting by incorporation date and presence of bank relationships for each group. There are `r nrow(exposure_data[is.na(nace_prim_code)])` firms for which the industry code is not available. Industry composition within a county should be taken care by the county-level fixed effects in our identification.
+
+```{r, add-two-digits-nace-firms}
+# two-digits NACE codes are in string format, can be zero in front
+exposure_data[, nace_two_digits := substr(nace_prim_code, 1, 2)]
+```
+
+```{r, industry-shares-by-county}
+industry_shares <- exposure_data[
+    !is.na(nace_prim_code), .(kkz_rek, nace_two_digits)
+][
+    , .(nfirms_ind = .N),
+    by = .(kkz_rek, nace_two_digits)
+][
+    , industry_shares := nfirms_ind / fsum(nfirms_ind),
+    by = .(kkz_rek)
+]
+```
+
+```{r, industry-shares-by-county-old-firms}
+industry_shares_past_data <- past_firms_data[
+    , nace_two_digits := substr(nace_prim_code, 1, 2)
+][
+    !is.na(nace_prim_code), .(kkz_rek, nace_two_digits)
+][
+    , .(nfirms_ind = .N),
+    by = .(kkz_rek, nace_two_digits)
+][
+    , industry_shares := nfirms_ind / fsum(nfirms_ind),
+    by = .(kkz_rek)
+]
+```
+
+```{r, export-industry-shares}
+fst::write_fst(
+    industry_shares,
+    here::here("data", "counties", "industry_shares_amadeus.fst")
+)
+fst::write_fst(
+    industry_shares_past_data,
+    here::here("data", "counties", "industry_shares_amadeus_prev.fst")
+)
+```
+
+
+```{r, download-nace-codes}
+# NACE ver.2 from Bruno Rodrigues gist
+
+# read .csv file with readr package for better readability of flat data
+nace_codes <- readr::read_csv(
+    glue::glue(
+        "https://gist.githubusercontent.com/b-rodrigues/",
+        "4218d6daa8275acce80ebef6377953fe/raw/",
+        "99bb5bc547670f38569c2990d2acada65bb744b3/",
+        "nace_rev2.csv"
+    )
+)
+# create codes for all levels keeping only the description
+nace_codes <- nace_codes %>%
+    dplyr::filter(!is.na(Parent)) %>%
+    dplyr::mutate(Code = stringr::str_replace(Code, "\\.", "")) %>%
+    dplyr::mutate(Code = ifelse(Level == 2, paste0(Code, "00"), Code)) %>%
+    dplyr::mutate(Code = ifelse(Level == 3, paste0(Code, "0"), Code)) %>%
+    dplyr::select(Level, Code, Description)
+colnames(nace_codes) <- c("level", "code", "description")
+```
+
+```{r, count-firms-nace-codes-table}
+# two-digits nace codes
+nace_description <- nace_codes %>%
+    dplyr::filter(level == 2) %>%
+    dplyr::mutate(nace_two_digits = substr(code, 1, 2)) %>%
+    dplyr::select(nace_two_digits, description) %>%
+    as.data.table()
+
+# calculate some stats of bank relationships by industry
+industry_relationships <- exposure_data %>%
+    dplyr::filter(!is.na(nace_prim_code)) %>%
+    dplyr::select(nace_two_digits, matches("._relationships")) %>%
+    dplyr::group_by(nace_two_digits) %>%
+    dplyr::summarise(
+        across(
+            .fns = list(mean = fmean, median = fmedian, max = fmax),
+            .names = "{.col}.{.fn}"
+        )
+    ) %>%
+    as.data.table()
+
+# add average industry share by county
+industry_relationships[
+    industry_shares[, .(mean_shares = fmean(industry_shares) * 100),
+        by = .(nace_two_digits)
+    ],
+    on = .(nace_two_digits),
+    mean_shares := i.mean_shares
+]
+
+tab_nace <- exposure_data[, .(nfirms = .N), by = .(nace_two_digits, ftype)] %>%
+    data.table::dcast(nace_two_digits ~ ftype, value.var = "nfirms")
+
+merge(nace_description, tab_nace, by = "nace_two_digits", all.x = TRUE) %>%
+    merge(industry_relationships, by = "nace_two_digits", all.x = TRUE) %>%
+    dplyr::mutate_all(function(x) ifelse(is.na(x), 0, x)) %>%
+    dplyr::mutate(Total = S + M + L + V) %>%
+    dplyr::arrange(desc(Total)) %>%
+    kableExtra::kbl(
+        format.args = list(scientific = FALSE, digits = 2),
+        col.names = c(
+            "Two-Digits NACE Codes", "Industry Description",
+            "Large", "Medium", "Small", "Very Large",
+            "Mean", "Median", "Max. Value",
+            "Mean", "Median", "Max. Value",
+            "Mean Share per County (%)", "Total Firms"
+        ),
+        caption = glue::glue(
+            "NACE rev. 2 two-digits codes ",
+            "with description and number of firms in our ",
+            "sample for all firms established before 2007 ",
+            "of which we have the bank relationships, in ",
+            "order of frequency."
+        )
+    ) %>%
+    kableExtra::add_header_above(c(
+        " " = 2, "Firm Size" = 4,
+        "Total Bank Relationships" = 3,
+        "Commerzbank Relationships" = 3,
+        " " = 2
+    )) %>%
+    kableExtra::column_spec(1, width = "12em") %>%
+    kableExtra::column_spec(2, width = "20em") %>%
+    kableExtra::column_spec(3:12, width = "6em") %>%
+    kableExtra::column_spec(13, width = "10em") %>%
+    kableExtra::column_spec(14, width = "6em") %>%
+    kableExtra::kable_styling(
+        full_width = TRUE, fixed_thead = TRUE,
+        bootstrap_options = c("hover", "condensed", "responsive")
+    )
+```
+
+A large part of the firms are in management consultancy activities, followed by construction and wholesale trade. On average, heavy industry firms have the most number of bank relationships, whereas the most number of bank relationships with Commerzbank are on wholesale trade, manifacture of machinery and equipment, warehousing, manufacture of electronic products and manufacture of rubber and plastic products. We also report the average industry share at county level. We consider industry shares at county level as frequency weight for the size of an industry within a county.
+
+### Exploring the Financial Panel and Firm Size Categories
+
+In this section, we explore the financial variables we fetched from the _financials\_x_ tables in Amadeus. In primis, we remove duplicates for the entire financials data where there are both consolidated and unconsolidated data. We summarize the financial variables for the entire sample after filtering duplicates by firm size category, to make some sense of what it means to be a firm of size _X_ in the Amadeus data, how complete are the financial information and which years are more prominent, given the existing survivorship bias.
+
+```{r, filter-financials-duplicates}
+financials <- financials[, nrows := .N, by = .(idnr, closdate_year)][
+    nrows == 1 | nrows > 1 & repbas %like% "Consolidated"
+]
+```
+
+```{r, summary-statistics-financials}
+# columns to rescale
+cols <- c(
+    "staf", "opre", "wkca", "cuas", "toas", "culi",
+    "loan", "ltdb", "tshf", "shfd"
+)
+financials %>%
+    dplyr::mutate_at(cols, function(x) x / 1000000) %>%
+    dplyr::mutate(ftype = dplyr::case_when(
+        ftype == "S" ~ "Small",
+        ftype == "M" ~ "Medium",
+        ftype == "L" ~ "Large",
+        ftype == "V" ~ "Very Large"
+    )) %>%
+    gtsummary::tbl_summary(
+        include = c(
+            "closdate_year", "empl", all_of(cols),
+            "liqr", "solr", "crpe"
+        ),
+        by = ftype,
+        label = list(
+            closdate_year ~ "Closing Date (Year)",
+            empl ~ "Number of Employees",
+            staf ~ "Cost of Employees (EUR Mln.)",
+            opre ~ "Operating Revenues (EUR Mln.)",
+            wkca ~ "Working Capital (EUR Mln.)",
+            cuas ~ "Current Assets (EUR Mln.)",
+            toas ~ "Total Assets (EUR Mln.)",
+            culi ~ "Current Liabilities (EUR Mln.)",
+            loan ~ "Current Loans (EUR Mln.)",
+            ltdb ~ "Long-Term Debt (EUR Mln.)",
+            tshf ~ "Total Shareholders Funds (EUR Mln.)",
+            shfd ~ "Total Shareholders Funds and Liabilities (EUR Mln.)",
+            liqr ~ "Liquidity Ratio (%)",
+            solr ~ "Solvency Ratio (%)",
+            crpe ~ "Credit Period (days)"
+        )
+    ) %>%
+    gtsummary::add_overall(last = TRUE) %>%
+    gtsummary::modify_spanning_header(
+        all_stat_cols(stat_0 = FALSE) ~ "**Firm Size**"
+    ) %>%
+    gtsummary::modify_header(label ~ "**Variable**") %>%
+    gtsummary::modify_caption(
+        caption = glue::glue(
+            "Summary Statistics of the universe of German ",
+            "firms' financials in extracted ",
+            "from Amadeus database."
+        )
+    ) %>%
+    gtsummary::as_gt() %>%
+    gt::tab_style(
+        style = list(cell_fill(color = "#F8F6BD"), cell_text(style = "italic")),
+        location = cells_body(rows = row_type == "label")
+    )
+```
+
+From the summary statistics we do see the survivorship bias for all firms in the sample. The closing date year is 2014 at the 25th percentile, which does not give us much hope to have information at the years before the credit shock. The most complete information comes from the number of employees, current assets, current liabilities, total assets, long-term debt, total equity and right-hand side of the balance sheet and solvency ratio. We try to isolate those variables for the entire period available for those firms restricted with the incorporation date and the bank relationships data.
+
+```{r, summary-financials-subsample}
+cols <- c("staf", "cuas", "toas", "culi", "loan", "ltdb", "tshf", "shfd")
+financials[idnr %in% exposure_data[, idnr]] %>%
+    dplyr::mutate_at(cols, function(x) x / 1000000) %>%
+    dplyr::mutate(ftype = dplyr::case_when(
+        ftype == "S" ~ "Small",
+        ftype == "M" ~ "Medium",
+        ftype == "L" ~ "Large",
+        ftype == "V" ~ "Very Large"
+    )) %>%
+    gtsummary::tbl_summary(
+        include = c("closdate_year", "empl", all_of(cols), "solr"),
+        by = ftype,
+        label = list(
+            closdate_year ~ "Closing Date (Year)",
+            empl ~ "Number of Employees",
+            staf ~ "Cost of Employees (EUR Mln.)",
+            cuas ~ "Current Assets (EUR Mln.)",
+            toas ~ "Total Assets (EUR Mln.)",
+            culi ~ "Current Liabilities (EUR Mln.)",
+            ltdb ~ "Long-Term Debt (EUR Mln.)",
+            tshf ~ "Total Shareholders Funds (EUR Mln.)",
+            shfd ~ "Total Shareholders Funds and Liabilities (EUR Mln.)",
+            solr ~ "Solvency Ratio (%)"
+        )
+    ) %>%
+    gtsummary::add_overall(last = TRUE) %>%
+    gtsummary::modify_spanning_header(
+        all_stat_cols(stat_0 = FALSE) ~ "**Firm Size**"
+    ) %>%
+    gtsummary::modify_header(label ~ "**Variable**") %>%
+    gtsummary::modify_caption(
+        caption = glue::glue(
+            "Summary Statistics of the subsample of German ",
+            "firms established before 2007 of which we have ",
+            "bank relationships for the entire period."
+        )
+    ) %>%
+    gtsummary::as_gt() %>%
+    gt::tab_style(
+        style = list(cell_fill(color = "#F8F6BD"), cell_text(style = "italic")),
+        location = cells_body(rows = row_type == "label")
+    )
+```
+
+We compare the current firms financial information with the firms we were using in the previous sample in the draft, to see whether we can retrieve some financial data for those. The numbers are actually very similar.
+
+```{r, summary-financials-subsample-past-firms-data}
+cols <- c("staf", "cuas", "toas", "culi", "loan", "ltdb", "tshf", "shfd")
+financials[idnr %in% past_firms_data[, idnr]] %>%
+    dplyr::mutate_at(cols, function(x) x / 1000000) %>%
+    dplyr::mutate(ftype = dplyr::case_when(
+        ftype == "S" ~ "Small",
+        ftype == "M" ~ "Medium",
+        ftype == "L" ~ "Large",
+        ftype == "V" ~ "Very Large"
+    )) %>%
+    gtsummary::tbl_summary(
+        include = c("closdate_year", "empl", all_of(cols), "solr"),
+        by = ftype,
+        label = list(
+            closdate_year ~ "Closing Date (Year)",
+            empl ~ "Number of Employees",
+            staf ~ "Cost of Employees (EUR Mln.)",
+            cuas ~ "Current Assets (EUR Mln.)",
+            toas ~ "Total Assets (EUR Mln.)",
+            culi ~ "Current Liabilities (EUR Mln.)",
+            ltdb ~ "Long-Term Debt (EUR Mln.)",
+            tshf ~ "Total Shareholders Funds (EUR Mln.)",
+            shfd ~ "Total Shareholders Funds and Liabilities (EUR Mln.)",
+            solr ~ "Solvency Ratio (%)"
+        )
+    ) %>%
+    gtsummary::add_overall(last = TRUE) %>%
+    gtsummary::modify_spanning_header(
+        all_stat_cols(stat_0 = FALSE) ~ "**Firm Size**"
+    ) %>%
+    gtsummary::modify_header(label ~ "**Variable**") %>%
+    gtsummary::modify_caption(
+        caption = glue::glue(
+            "Summary Statistics of the subsample of German ",
+            "firms established before 2007 of which we have ",
+            "bank relationships for the entire period, as ",
+            "calculated in the previous draft."
+        )
+    ) %>%
+    gtsummary::as_gt() %>%
+    gt::tab_style(
+        style = list(cell_fill(color = "#F8F6BD"), cell_text(style = "italic")),
+        location = cells_body(rows = row_type == "label")
+    )
+```
+For those firms and those variables, we would like to understand how many we have for the years before the credit shock, from 2000 to 2008 as reference years. From the table below, we see that information of number and cost of employees is very limited, whereas information on current assets, current liabilities and long-term debt is more available. For weighting using financials data, it makes sense to use alternatively the three years before the shock, which are 2006, 2007, and 2008, with more emphasis on 2007 as we have more information than 2006 and it is safe enough to not be affected by the credit shock than 2008, net of the delay in reporting of Amadeus.
+
+```{r, financials-nonmissing-table-subset}
+cols <- c(
+    "empl", "staf", "cuas", "toas", "culi",
+    "ltdb", "tshf", "shfd", "solr"
+)
+financials[
+    closdate_year %in% seq(2000, 2008) & idnr %in% exposure_data[, idnr]
+][
+    , lapply(.SD, fnobs),
+    by = closdate_year, .SDcols = (cols)
+][
+    order(closdate_year)
+] %>%
+    gt::gt(
+        rowname_col = "closdate_year",
+        caption = glue::glue(
+            "Frequency of non-missing values for the ",
+            "financial variables of most interest of the ",
+            "firms established before 2007 and of which ",
+            "we have the bank relationships, ",
+            "between 2000 and 2008."
+        )
+    ) %>%
+    gt::tab_stubhead("Closing Date (Year)") %>%
+    gt::tab_spanner(label = "Non-Missing Values", columns = everything()) %>%
+    gt::cols_label(
+        empl = "Number of Employees",
+        staf = "Cost of Employees",
+        cuas = "Current Assets",
+        toas = "Total Assets",
+        culi = "Current Liabilities",
+        ltdb = "Long-Term Debt",
+        tshf = "Total Equity",
+        shfd = "Total Equity and Liabilities",
+        solr = "Solvency Ratio"
+    ) %>%
+    gt::opt_row_striping(row_striping = TRUE)
+```
+
+```{r, summary-financials-subsample-three-years}
+vip_years <- seq(2006, 2008)
+cols <- c("staf", "cuas", "culi", "toas", "ltdb")
+financials[idnr %in% exposure_data[, idnr] & closdate_year %in% vip_years] %>%
+    dplyr::mutate_at(cols, function(x) x / 1000000) %>%
+    dplyr::mutate(ftype = dplyr::case_when(
+        ftype == "S" ~ "Small",
+        ftype == "M" ~ "Medium",
+        ftype == "L" ~ "Large",
+        ftype == "V" ~ "Very Large"
+    )) %>%
+    gtsummary::tbl_strata(
+        strata = closdate_year,
+        .tbl_fun = ~ .x %>%
+            gtsummary::tbl_summary(
+                include = c("empl", all_of(cols)),
+                by = ftype,
+                label = list(
+                    empl ~ "Number of Employees",
+                    staf ~ "Cost of Employees (EUR Mln.)",
+                    cuas ~ "Current Assets (EUR Mln.)",
+                    toas ~ "Total Assets (EUR Mln.)",
+                    culi ~ "Current Liabilities (EUR Mln.)",
+                    ltdb ~ "Long-Term Debt (EUR Mln.)"
+                )
+            ) %>%
+            gtsummary::add_overall(last = TRUE) %>%
+            gtsummary::modify_header(label ~ "**Variable**")
+    ) %>%
+    gtsummary::modify_caption(
+        caption = glue::glue(
+            "Summary Statistics of the subsample of German ",
+            "firms established before 2007 of which we have ",
+            "bank relationships for the years 2006, 2007 ",
+            "and 2008 by firm size category."
+        )
+    ) %>%
+    gtsummary::as_gt() %>%
+    gt::tab_style(
+        style = list(cell_fill(color = "#F8F6BD"), cell_text(style = "italic")),
+        location = cells_body(rows = row_type == "label")
+    )
+```
+
+### Weights using the Financial Information
+
+From the financial data we have, we take into account two dimensions of the firm within the industry clusters at county level:
+
+- the **sensitivity** of a firm to liquidity constraints generated by a credit shock, which give us how the firm compared to the county-level peers would be more exposed to a short-term credit shock, and
+
+- the county-level firm **relevance**, which gives us how important is the firm for the county's economy compared to the county-level peers.
+
+For the first measure, we consider the current ratio, which is current assets over current liabilities. It is a type of liquidity ratio that measures a company's ability to pay off its current liabilities with its total current assets such as cash, accounts receivable and inventories. In case of a credit shock, the firms needs to rely on liquidity to pay off current liabilities, such as the salaries, and the higher the current ratio, the better is the company's liquidity position.
+
+For the second measure, we can either consider the number of employees or the cost of employees, which is also indicative of the size of the firm in a non-categorical fashion. From the summary table of financials for the subsample, we see that current assets and liabilities can be negative or zero, as well as cost of employees.
+
+It is reasonable to think that the sensitivity of a firm depends on its size and industry. Firms within an industry might respond differently to credit shocks than industries in a different industry. County-level industry composition share of firm size should be absorbed by fixed effects in the identification, but we can still compare firms within the county by their current ratio. 
+
+We take the inverse rank of firms within a county by their current ratio and divide this rank by the sum of total values of ranks at county level, such that the weights sum up to one. Ranking takes care of the negative current assets and liabilities, as well as infinite values due to zero liabilities. Identical current ratios are weighted equally. The smaller the current ratio of a firm, the higher the rank and the bigger the weight assigned at county level.
+
+We use the number or the cost of employees at firm level to weight for the size of a firm within a county. We combine the current ratio weights and the employees weights computing two different weighted averages for each weight and then divide by 2. The following table gives a summary of the weights with the financial information at firm level.
+
+```{r, financial-weights-with-information}
+vip_years <- seq(2006, 2008)
+cols <- c("idnr", "kkz_rek", "closdate_year", "empl", "staf", "cuas", "culi")
+cross_financials <- financials[
+    exposure_data[, .(idnr, kkz_rek)],
+    on = .(idnr)
+][
+    closdate_year %in% vip_years, ..cols
+]
+# calculate current ratio
+cross_financials[, curr := cuas / culi]
+# calculate current ratio weights based on percentile rank
+cross_financials[
+    !is.na(curr) & !is.nan(curr),
+    w.curr := frank(-curr) / fsum(frank(-curr)),
+    by = .(closdate_year, kkz_rek)
+]
+# calculate number of employees weights
+cross_financials[
+    !is.na(empl), w.empl := empl / fsum(empl),
+    by = .(closdate_year, kkz_rek)
+]
+# calculate payrolls weights
+cross_financials[
+    !is.na(staf), w.staf := staf / fsum(staf),
+    by = .(closdate_year, kkz_rek)
+]
+# combined current ratio and payrolls weights, we calculate the weights
+# considering the same firms and then we do double weighted average on
+# the commerzbank dependence and divide by two
+cross_financials[
+    !is.na(curr) & !is.nan(curr) & !is.na(staf),
+    w.curr.staf := frank(-curr) / fsum(frank(-curr)),
+    by = .(closdate_year, kkz_rek)
+]
+cross_financials[
+    !is.na(curr) & !is.nan(curr) & !is.na(staf),
+    w.staf.curr := staf / fsum(staf),
+    by = .(closdate_year, kkz_rek)
+]
+# combined with empl and curr
+cross_financials[
+    !is.na(curr) & !is.nan(curr) & !is.na(empl),
+    w.curr.empl := frank(-curr) / fsum(frank(-curr)),
+    by = .(closdate_year, kkz_rek)
+]
+cross_financials[
+    !is.na(curr) & !is.nan(curr) & !is.na(empl),
+    w.empl.curr := empl / fsum(empl),
+    by = .(closdate_year, kkz_rek)
+]
+```
+
+```{r, summary-weights-firm-data}
+cross_financials[, .SD, .SDcols = patterns("w\\..{4}$|closdate_year")] %>%
+    dplyr::group_by(closdate_year) %>%
+    skimr::skim() %>%
+    dplyr::select(!matches("skim_type")) %>%
+    dplyr::mutate(skim_variable = dplyr::case_when(
+        skim_variable == "w.empl" ~ "No. Employees",
+        skim_variable == "w.curr" ~ "rank(Current Ratio)",
+        skim_variable == "w.staf" ~ "Payrolls",
+    )) %>%
+    gt::gt(
+        rowname_col = "closdate_year", groupname_col = "skim_variable",
+        caption = glue::glue(
+            "Summary Statistics of the within-county ",
+            "weights obtained using firm-level financial ",
+            "variables for the subset of firms and the ",
+            "balance sheets from 2006, 2007, and 2008."
+        )
+    ) %>%
+    gt::fmt_number(columns = !matches("hist|miss"), decimals = 4) %>%
+    gt::cols_label(
+        n_missing = "Missing Values",
+        complete_rate = "Complete Rate (%)",
+        numeric.mean = "Mean",
+        numeric.sd = "Std. Dev.",
+        numeric.p0 = "Min. Value",
+        numeric.p25 = "25th",
+        numeric.p50 = "Median",
+        numeric.p75 = "75th",
+        numeric.p100 = "Max. Value",
+        numeric.hist = "Histogram"
+    ) %>%
+    gt::tab_stubhead(label = "Within-County Weights") %>%
+    gt::tab_options(row_group.as_column = TRUE)
+```
+```{r, cast-cross-financials}
+cols <- names(cross_financials)[
+    !grepl("closdate_year|idnr|kkz_rek", names(cross_financials))
+]
+cross_financials <- data.table::dcast(
+    cross_financials, idnr ~ closdate_year,
+    value.var = cols
+)
+```
+
+We perform the same operation on the sample of firms retrieved in the previous draft, to see whether we have similar weights on summaries, and we keep the option to use the previous data.
+
+```{r, financial-weights-with-information-past-sample}
+vip_years <- seq(2006, 2008)
+cols <- c("idnr", "kkz_rek", "closdate_year", "empl", "staf", "cuas", "culi")
+cross_financials_past_sample <- financials[
+    past_firms_data[, .(idnr, kkz_rek)],
+    on = .(idnr)
+][
+    closdate_year %in% vip_years, ..cols
+]
+# calculate current ratio
+cross_financials_past_sample[, curr := cuas / culi]
+# calculate current ratio weights based on percentile rank
+cross_financials_past_sample[
+    !is.na(curr) & !is.nan(curr),
+    w.curr := frank(-curr) / fsum(frank(-curr)),
+    by = .(closdate_year, kkz_rek)
+]
+# calculate number of employees weights
+cross_financials_past_sample[
+    !is.na(empl), w.empl := empl / fsum(empl),
+    by = .(closdate_year, kkz_rek)
+]
+# calculate payrolls weights
+cross_financials_past_sample[
+    !is.na(staf), w.staf := staf / fsum(staf),
+    by = .(closdate_year, kkz_rek)
+]
+# combined current ratio and payrolls weights, we calculate the weights
+# considering the same firms and then we do double weighted average on
+# the commerzbank dependence and divide by two
+cross_financials_past_sample[
+    !is.na(curr) & !is.nan(curr) & !is.na(staf),
+    w.curr.staf := frank(-curr) / fsum(frank(-curr)),
+    by = .(closdate_year, kkz_rek)
+]
+cross_financials_past_sample[
+    !is.na(curr) & !is.nan(curr) & !is.na(staf),
+    w.staf.curr := staf / fsum(staf),
+    by = .(closdate_year, kkz_rek)
+]
+# combined with empl and curr
+cross_financials_past_sample[
+    !is.na(curr) & !is.nan(curr) & !is.na(empl),
+    w.curr.empl := frank(-curr) / fsum(frank(-curr)),
+    by = .(closdate_year, kkz_rek)
+]
+cross_financials_past_sample[
+    !is.na(curr) & !is.nan(curr) & !is.na(empl),
+    w.empl.curr := empl / fsum(empl),
+    by = .(closdate_year, kkz_rek)
+]
+```
+
+```{r, summary-weights-firm-data-past-firms}
+cross_financials_past_sample[
+    , .SD,
+    .SDcols = patterns("w\\..{4}$|closdate_year")
+] %>%
+    dplyr::group_by(closdate_year) %>%
+    skimr::skim() %>%
+    dplyr::select(!matches("skim_type")) %>%
+    dplyr::mutate(skim_variable = dplyr::case_when(
+        skim_variable == "w.empl" ~ "No. Employees",
+        skim_variable == "w.curr" ~ "rank(Current Ratio)",
+        skim_variable == "w.staf" ~ "Payrolls",
+    )) %>%
+    gt::gt(
+        rowname_col = "closdate_year", groupname_col = "skim_variable",
+        caption = glue::glue(
+            "Summary Statistics of the within-county ",
+            "weights obtained using firm-level financial ",
+            "variables for the subset of firms used in ",
+            "the previous draft and the balance sheets ",
+            "from 2006, 2007, and 2008."
+        )
+    ) %>%
+    gt::fmt_number(columns = !matches("hist|miss"), decimals = 4) %>%
+    gt::cols_label(
+        n_missing = "Missing Values",
+        complete_rate = "Complete Rate (%)",
+        numeric.mean = "Mean",
+        numeric.sd = "Std. Dev.",
+        numeric.p0 = "Min. Value",
+        numeric.p25 = "25th",
+        numeric.p50 = "Median",
+        numeric.p75 = "75th",
+        numeric.p100 = "Max. Value",
+        numeric.hist = "Histogram"
+    ) %>%
+    gt::tab_stubhead(label = "Within-County Weights") %>%
+    gt::tab_options(row_group.as_column = TRUE)
+```
+
+```{r, cast-cross-financials-past-sample}
+cols <- names(cross_financials_past_sample)[
+    !grepl("closdate_year|idnr|kkz_rek", names(cross_financials_past_sample))
+]
+cross_financials_past_sample <- data.table::dcast(
+    cross_financials_past_sample, idnr ~ closdate_year,
+    value.var = cols
+)
+```
+
+For the entire sample of firms, including those of which we do not have the financial information, we would like to consider the mean of the financial values of the firms in the same size category within their county for which we do have information, and assign it to all firms. However, it is possible that this information covers all firm size categories within a county, it can be that some of the firms in the sample with the bank relationships have no match. We pool together the all the years around 2006, from 2004 and 2008, and we take mean of the financial variables. We calculate the current ratio on the mean value, but we invert it considering 1/current ratio, such that the bigger the number obtained the more severe is the liquidity exposure.
+
+```{r, financial-weights-without-information}
+vip_years <- seq(2004, 2008)
+cols <- c("kkz_rek", "ftype", "closdate_year", "empl", "staf", "cuas", "culi")
+# match financials with companies' county code, restrict for the years around
+# 2006 and then take mean and median at firm type and county level
+weights_stats <- financials[companies[, .(idnr, kkz_rek)], on = .(idnr)][
+    closdate_year %in% vip_years, ..cols
+] %>%
+    collapse::fgroup_by(kkz_rek, ftype) %>%
+    collapse::fsummarise(across(empl:culi, fmean))
+# assign mean label to column
+names(weights_stats) <- c(
+    names(weights_stats)[1:2], paste0(names(weights_stats)[3:6], "_mean")
+)
+# current ratio with averages
+weights_stats[, curr_mean := 1 / (cuas_mean / culi_mean)]
+# copy into firm identifiers
+mean_weights <- merge(
+    exposure_data[, .(idnr, kkz_rek, ftype)], weights_stats,
+    by = c("kkz_rek", "ftype"), all.x = TRUE
+)
+
+cols <- c("empl_mean", "staf_mean", "curr_mean")
+
+# replace all NaN with NA
+mean_weights <- mean_weights[
+    , lapply(.SD, function(x) replace(x, is.nan(x), NA))
+]
+# firm-level weights using mean
+mean_weights[
+    , paste0("w.", cols) := lapply(.SD, function(x) x / fsum(x)),
+    by = .(kkz_rek), .SDcols = (cols)
+]
+# firm-level weights curr+staf combined
+mean_weights[
+    !is.na(curr_mean) & !is.na(staf_mean),
+    w.curr_mean.staf_mean := curr_mean / fsum(curr_mean),
+    by = .(kkz_rek)
+]
+mean_weights[
+    !is.na(curr_mean) & !is.na(staf_mean),
+    w.staf_mean.curr_mean := staf_mean / fsum(staf_mean),
+    by = .(kkz_rek)
+]
+# firm-level weights curr+empl
+mean_weights[
+    !is.na(curr_mean) & !is.na(empl_mean),
+    w.curr_mean.empl_mean := curr_mean / fsum(curr_mean),
+    by = .(kkz_rek)
+]
+mean_weights[
+    !is.na(curr_mean) & !is.na(empl_mean),
+    w.empl_mean.curr_mean := empl_mean / fsum(empl_mean),
+    by = .(kkz_rek)
+]
+```
+
+```{r, summary-financial-weights-means}
+mean_weights[, .SD, .SDcols = patterns("w\\....._mean$")] %>%
+    skimr::skim() %>%
+    dplyr::select(!matches("skim_type")) %>%
+    dplyr::mutate(skim_variable = dplyr::case_when(
+        skim_variable == "w.empl_mean" ~ "No. Employees",
+        skim_variable == "w.curr_mean" ~ "Current Ratio",
+        skim_variable == "w.staf_mean" ~ "Payrolls",
+    )) %>%
+    gt::gt(
+        groupname_col = "skim_variable",
+        caption = glue::glue(
+            "Summary Statistics of the within-county ",
+            "weights obtained using mean ",
+            "financial variables at county level pooling ",
+            "financial years from 2004 to 2008."
+        )
+    ) %>%
+    gt::fmt_number(
+        columns = !matches("hist|miss"),
+        use_seps = TRUE, decimals = 4
+    ) %>%
+    gt::cols_label(
+        n_missing = "Missing Values",
+        complete_rate = "Complete Rate (%)",
+        numeric.mean = "Mean",
+        numeric.sd = "Std. Dev.",
+        numeric.p0 = "Min. Value",
+        numeric.p25 = "25th",
+        numeric.p50 = "Median",
+        numeric.p75 = "75th",
+        numeric.p100 = "Max. Value",
+        numeric.hist = "Histogram"
+    ) %>%
+    gt::tab_stubhead(label = "Within-County Weights") %>%
+    gt::tab_options(row_group.as_column = TRUE)
+```
+
+There is a significant lower level of missing values for firm weights, but we are not able to cover the full sample in any case.
+
+It would be nice to repeat the same operation for the sample of firms retrieved in the previous draft, but I have not saved the firm size label for the firms thus I am unable to assign the weights to quite some of the firms, dropping down to a sample of `r nrow(unique(financials[idnr %in% past_firms_data[, idnr], .(idnr, ftype)]))` firms when using the financials data to retrieve the size category for the firms.
+
+```{r, firms-cross-section-final}
+# add cross-section information of financials to the firm-level data
+exposure_data <- merge(
+    exposure_data, cross_financials,
+    by = "idnr", all.x = TRUE
+)
+exposure_data <- merge(
+    exposure_data, mean_weights[, -c("ftype", "kkz_rek")],
+    by = "idnr", all.x = TRUE
+)
+```
+
+```{r, old-firms-cross-section-final}
+past_firms_data <- merge(
+    past_firms_data, cross_financials_past_sample,
+    by = "idnr", all.x = TRUE
+)
+```
+
+```{r, write-fst-firm-exposure, eval = FALSE}
+fst::write_fst(
+    exposure_data,
+    here::here("data", "firms", "exposure", "firm_exposure.fst")
+)
+fst::write_fst(
+    past_firms_data,
+    here::here("data", "firms", "exposure", "firm_exposure_prev.fst")
+)
+```
+
+## Measuring County-Level Commerzbank Dependence
+
+In this section, we calculate the measure of Commerzbank dependence at county level using the different weights at firm level we prepared in the previous section, comparing it to the equally weighted measure, the measures calculated from the previous sample of firms, and the one coming from Huber. The following histograms are the result of the computation of county-level Commerzbank dependence using different weighting or applying equal weights at firm level.
+
+```{r, read-firm-exposure-data}
+firms <- as.data.table(
+    fst::read_fst(here::here(
+        "data", "firms", "exposure", "firm_exposure.fst"
+    ))
+)
+firms_prev <- as.data.table(
+    fst::read_fst(here::here(
+        "data", "firms", "exposure", "firm_exposure_prev.fst"
+    ))
+)
+```
+
+```{r, compute-county-exposure-measures}
+# subset data.table keeping just firm exposure and weights by kkz_rek
+county_exposure <- firms[, .SD, .SDcols = patterns("kkz_rek|.exposure|w\\.")]
+# filter columns with weights on individual data and closdate_year
+cols <- names(county_exposure)[
+    grepl("w\\.[a-z]{4}_[0-9]{4}$", names(county_exposure))
+]
+# county exposure using individual financial data weights (single)
+county_exposure[
+    , paste0("exposure_", cols) := lapply(
+        .SD, function(x) fsum(firm_exposure * x)
+    ),
+    by = .(kkz_rek), .SDcols = (cols)
+]
+# county exposure using individual financial data weights (combined)
+county_exposure[
+    , paste0("exposure_w.curr.empl_", seq(2006, 2008)) := lapply(
+        seq(2006, 2008), function(x) {
+            (
+                fsum(firm_exposure * get(paste0("w.curr.empl_", x))) +
+                    fsum(firm_exposure * get(paste0("w.empl.curr_", x)))) / 2
+        }
+    ),
+    by = .(kkz_rek)
+]
+county_exposure[
+    , paste0("exposure_w.curr.staf_", seq(2006, 2008)) := lapply(
+        seq(2006, 2008), function(x) {
+            (
+                fsum(firm_exposure * get(paste0("w.curr.staf_", x))) +
+                    fsum(firm_exposure * get(paste0("w.staf.curr_", x)))) / 2
+        }
+    ),
+    by = .(kkz_rek)
+]
+# filter columns of weights with means assigned to ftype firms within the county
+cols <- names(county_exposure)[
+    grepl("w\\.[a-z]{4}_mean$", names(county_exposure))
+]
+# county exposure using weights from mean value assigned to ftype
+county_exposure[
+    , paste0("exposure_", cols) := lapply(
+        .SD, function(x) fsum(firm_exposure * x)
+    ),
+    by = .(kkz_rek), .SDcols = (cols)
+]
+# county exposure using weights from mean values combined
+county_exposure[
+    , exposure_w.curr_mean.empl_mean := (
+        fsum(w.curr_mean.empl_mean * firm_exposure) +
+            fsum(w.empl_mean.curr_mean * firm_exposure)) / 2,
+    by = .(kkz_rek)
+]
+county_exposure[
+    , exposure_w.curr_mean.staf_mean := (
+        fsum(w.curr_mean.staf_mean * firm_exposure) +
+            fsum(w.staf_mean.curr_mean * firm_exposure)) / 2,
+    by = .(kkz_rek)
+]
+# county exposure as arithmetic mean
+county_exposure[, exposure_mean := fmean(firm_exposure), by = .(kkz_rek)]
+```
+
+```{r, compute-county-exposure-measures-past-firms}
+past_exposure <- firms_prev[, .SD, .SDcols = patterns("kkz_rek|.exposure|w\\.")]
+# filter columns with weights on individual data and closdate_year
+cols <- names(past_exposure)[
+    grepl("w\\.[a-z]{4}_[0-9]{4}$", names(past_exposure))
+]
+# county exposure using individual financial data weights (single)
+past_exposure[
+    , paste0("exposure_past_", cols) := lapply(
+        .SD, function(x) fsum(firm_exposure * x)
+    ),
+    by = .(kkz_rek), .SDcols = (cols)
+]
+# county exposure using individual financial data weights (combined)
+past_exposure[
+    , paste0("exposure_past_w.curr.empl_", seq(2006, 2008)) := lapply(
+        seq(2006, 2008), function(x) {
+            (
+                fsum(firm_exposure * get(paste0("w.curr.empl_", x))) +
+                    fsum(firm_exposure * get(paste0("w.empl.curr_", x)))) / 2
+        }
+    ),
+    by = .(kkz_rek)
+]
+past_exposure[
+    , paste0("exposure_past_w.curr.staf_", seq(2006, 2008)) := lapply(
+        seq(2006, 2008), function(x) {
+            (
+                fsum(firm_exposure * get(paste0("w.curr.staf_", x))) +
+                    fsum(firm_exposure * get(paste0("w.staf.curr_", x)))) / 2
+        }
+    ),
+    by = .(kkz_rek)
+]
+# county exposure as arithmetic mean
+past_exposure[, exposure_past_mean := fmean(firm_exposure), by = .(kkz_rek)]
+```
+
+```{r, count-firms-exposure-measures}
+# count firms for each county exposure measure and save it in table
+firms_count_1 <- county_exposure[
+    , lapply(.SD, function(x) sum(!is.na(x))),
+    .SDcols = patterns("firm_exposure|^w\\..")
+]
+cols <- names(firms_count_1)[
+    grepl("w\\.[a-z]{4}\\.curr|w\\.[a-z]{4}_mean\\.curr", names(firms_count_1))
+]
+firms_count_1 <- firms_count_1[, !..cols]
+names(firms_count_1) <- paste0("exposure_", names(firms_count_1))
+names(firms_count_1)[1] <- "exposure_mean"
+firms_count_2 <- past_exposure[
+    , lapply(.SD, function(x) sum(!is.na(x))),
+    .SDcols = patterns("firm_exposure|^w\\..")
+]
+cols <- names(firms_count_2)[
+    grepl("w\\.[a-z]{4}\\.curr|w\\.[a-z]{4}_mean\\.curr", names(firms_count_2))
+]
+firms_count_2 <- firms_count_2[, !..cols]
+names(firms_count_2) <- paste0("exposure_past_", names(firms_count_2))
+names(firms_count_2)[1] <- "exposure_past_mean"
+firms_count <- cbind(firms_count_1, firms_count_2)
+```
+
+```{r, collapse-exposure-measures}
+# subset just to keep exposure measures
+county_exposure <- unique(
+    county_exposure[, .SD, .SDcols = patterns("kkz_rek|^exposure_.")]
+)
+past_exposure <- unique(
+    past_exposure[, .SD, .SDcols = patterns("kkz_rek|^exposure_past_.")]
+)
+# merge on past exposure because they have all the counties
+county_exposure <- merge(
+    past_exposure, county_exposure,
+    by = "kkz_rek", all.x = T
+)
+```
+
+```{r, count-counties-exposure-measures}
+counties_mean <- county_exposure[
+    , lapply(.SD, fmean),
+    .SDcols = patterns("^exposure_.")
+]
+counties_count <- county_exposure[
+    , lapply(.SD, function(x) sum(!is.na(x))),
+    .SDcols = patterns("^exposure_.")
+]
+```
+
+```{r, labels-histograms-county-exposure}
+labels <- rbindlist(list(counties_mean, firms_count, counties_count),
+    use.names = TRUE
+)
+cols <- names(labels)
+# string conversion after rounding
+labels[, (cols) := lapply(
+    .SD, function(x) {
+        as.character(fifelse(
+            floor(x) == 0, round(x, 3), round(x, 0)
+        ))
+    }
+)]
+labels[1, (cols) := lapply(.SD, function(x) paste0("Mean: ", x))]
+labels[2, (cols) := lapply(.SD, function(x) paste0("Firms: ", x))]
+labels[3, (cols) := lapply(.SD, function(x) paste0("Counties: ", x, ";"))]
+# collapse rows into one string
+labels <- labels[, lapply(.SD, paste, collapse = "; ")]
+```
+
+### Exposure using Equal Weigthing
+
+In the following histogram, we plot the distribution of the county-level Commerzbank dependence using the current firm sample with equal weights - just the arithmetic mean of firm-level Commerzbank dependence within a county - with the distributiuon of the county-level Commerzbank dependence using the previous sample we applied in the last draft. The mean of the distribution is smaller in the current sample (`r round(counties_mean$exposure_mean, 3)` and `r round(counties_mean$exposure_past_mean, 3)`), and we miss one county having less firms. Another important feature to notice for our design is that in the current firms' sample we have one county with zero county-level Commerzbank dependence, Landau in der Pfalz (KKZ = 07313), and the missing county is Eisenach (KKZ = 16056). The county with zero Commerzbank dependence has two firms, with one bank relationship each and none of them is with Commmerzbank. Instead, in the previous sample we have 459 firms for this county, with an average Commerzbank dependence of 0.049. Overall, they follow a very similar distribution.
+
+```{r}
+#| histogram-county-exposure-simple-mean,
+#| fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Distribution of the county-level Commerzbank dependence with equal
+#|    weights (simple county-level average), compared to the measure in the
+#|    previous version of the draft."
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_mean),
+        color = "#048BA8", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_past_mean),
+        color = "#EDB21D", linetype = "solid"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(y = 0.08, x = exposure_mean, label = labels$exposure_mean),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.06, x = exposure_past_mean,
+            label = labels$exposure_past_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_mean, y = ..count.. / sum(..count..),
+            fill = "new"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_past_mean, y = ..count.. / sum(..count..),
+            fill = "old"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 10) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.01)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c(old = "#EDB21D", new = "#048BA8"),
+        labels = c(old = "Old Sample", new = "New Sample"),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .95))
+```
+
+### Exposure using Firm-Level Weights
+
+In the following histograms, we compare the distribution of the county-level Commerzbank dependence using the individual level weights for different closing dates, from 2006 to 2008. Using the individual weights for the current ratio, the distribution is quite different along those years due to survivorship bias. Probably the most reliable source is 2007, following @bib:berg2021. Comparing this distribution with the equally weighted distribution, the former is quite smoother than the latter but with higher distributional mean.
+
+```{r}
+#| histogram-county-exposure-wcurr-years,
+#| fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Distribution of the county-level Commerzbank dependence obtained
+#|    using weights from the ranking of current ratio within the county, using
+#|    firm-level financial data from 2006, 2007 or 2008."
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.curr_2006),
+        color = "#048BA8", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.curr_2007),
+        color = "#EDB21D", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.curr_2008),
+        color = "#A2EB99", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.12, x = exposure_w.curr_2006,
+            label = labels$exposure_w.curr_2006
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.11, x = exposure_w.curr_2007,
+            label = labels$exposure_w.curr_2007
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.10, x = exposure_w.curr_2008,
+            label = labels$exposure_w.curr_2008
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.curr_2007, y = ..count.. / sum(..count..),
+            fill = "y2007"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.curr_2008, y = ..count.. / sum(..count..),
+            fill = "y2008"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.curr_2006, y = ..count.. / sum(..count..),
+            fill = "y2006"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 10) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.01)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c(
+            y2006 = "#048BA8", y2007 = "#EDB21D", y2008 = "#A2EB99"
+        ),
+        labels = c(y2006 = "2006", y2007 = "2007", y2008 = "2008"),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .95))
+```
+
+```{r}
+#| histogram-county-exposure-wcurr-simple,
+#| fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Distribution of the county-level Commerzbank dependence obtained
+#|    using weights from the ranking of current ratio from 2007 firm-level
+#|    financial data within the county, compared to the equal weights."
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.curr_2007),
+        color = "#048BA8", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_mean),
+        color = "#EDB21D", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.14, x = exposure_w.curr_2007,
+            label = labels$exposure_w.curr_2007
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.13, x = exposure_mean,
+            label = labels$exposure_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.curr_2007, y = ..count.. / sum(..count..),
+            fill = "curr"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_mean, y = ..count.. / sum(..count..),
+            fill = "mean"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 10) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.01)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c(curr = "#048BA8", mean = "#EDB21D"),
+        labels = c(curr = "Currency Ratio (2007)", mean = "Equal Weights"),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .95))
+```
+
+We repeat the same exercise using individual weights constructed with number of employees and the cost of employees, and we see a very skewed distribution of the county-level Commerzbank dependence towards zero but with higher mean values. Very few firms have complete information about employees. Combining those weights with the weights using the ranking of current ratio does not change the shape of distribution by construction. Using the past data at firm level combined with the available firm level financials used for weighting does not change the distribution significantly.
+
+```{r}
+#| histogram-county-exposure-wempl-years,
+#| fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Distribution of the county-level Commerzbank dependence obtained
+#|    using weights from the number of employees within the county, using
+#|    firm-level financial data from 2006, 2007 or 2008."
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.empl_2006),
+        color = "#048BA8", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.empl_2007),
+        color = "#EDB21D", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.empl_2008),
+        color = "#A2EB99", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.3, x = exposure_w.empl_2006,
+            label = labels$exposure_w.empl_2006
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.2, x = exposure_w.empl_2007,
+            label = labels$exposure_w.empl_2007
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.1, x = exposure_w.empl_2008,
+            label = labels$exposure_w.empl_2008
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.empl_2007, y = ..count.. / sum(..count..),
+            fill = "y2007"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.empl_2008, y = ..count.. / sum(..count..),
+            fill = "y2008"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.empl_2006, y = ..count.. / sum(..count..),
+            fill = "y2006"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 10) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.05)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c(
+            y2006 = "#048BA8", y2007 = "#EDB21D", y2008 = "#A2EB99"
+        ),
+        labels = c(y2006 = "2006", y2007 = "2007", y2008 = "2008"),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .95))
+```
+
+```{r}
+#| histogram-county-exposure-wstaf-years,
+#| fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Distribution of the county-level Commerzbank dependence obtained
+#|    using weights from the cost of employees within the county, using
+#|    firm-level financial data from 2006, 2007 or 2008."
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.staf_2006),
+        color = "#048BA8", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.staf_2007),
+        color = "#EDB21D", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.staf_2008),
+        color = "#A2EB99", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.3, x = exposure_w.staf_2006,
+            label = labels$exposure_w.staf_2006
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.2, x = exposure_w.staf_2007,
+            label = labels$exposure_w.staf_2007
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.1, x = exposure_w.staf_2008,
+            label = labels$exposure_w.staf_2008
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.staf_2007, y = ..count.. / sum(..count..),
+            fill = "y2007"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.staf_2008, y = ..count.. / sum(..count..),
+            fill = "y2008"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.staf_2006, y = ..count.. / sum(..count..),
+            fill = "y2006"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 10) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.05)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c(
+            y2006 = "#048BA8", y2007 = "#EDB21D", y2008 = "#A2EB99"
+        ),
+        labels = c(y2006 = "2006", y2007 = "2007", y2008 = "2008"),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .95))
+```
+
+### Exposure using weights from average values at firm size groups
+
+In this section, we analyse the distribution of the county-level Commerzbank exposure obtained by weighting at firm-level within a county assigning the average value of each financial variable we are considering by firm size category at each firm of that firm size. Just to remember, the mean is taken by using the financials from 2004 to 2008 of those firms that are in the sample. Considering the weights for number or cost of employees against the equally weighted exposure, we obtain a smoother distribution and higher in mean, but we drop a few counties where we do not have financials to take the average for each type of firm size in the available data.
+
+```{r}
+#| histogram-county-exposure-size-mean,
+#| fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Distribution of the county-level Commerzbank dependence obtained
+#|    using weights obtained from the average value at firm size level within
+#|    a county of the total number of employees and the cost of employees,
+#|    compared to the distribution using equal weights."
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.empl_mean),
+        color = "#048BA8", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.staf_mean),
+        color = "#EDB21D", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_mean),
+        color = "#A2EB99", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.15, x = exposure_w.empl_mean,
+            label = labels$exposure_w.empl_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.13, x = exposure_w.staf_mean,
+            label = labels$exposure_w.staf_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(y = 0.12, x = exposure_mean, label = labels$exposure_mean),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::stat_bin(
+        aes(x = exposure_mean, y = ..count.. / sum(..count..), fill = "mean"),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.empl_mean, y = ..count.. / sum(..count..),
+            fill = "empl"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.staf_mean, y = ..count.. / sum(..count..),
+            fill = "staf"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 10) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.01)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c(
+            empl = "#048BA8", staf = "#EDB21D", mean = "#A2EB99"
+        ),
+        labels = c(
+            empl = "No. of Employees", staf = "Cost of Employees",
+            mean = "Equal Weights"
+        ),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .9))
+```
+
+When combining the "size" weights obtained from number and cost of employees at firm size level with the inverse current ratio obtained as mean current liabilities over mean current assets by firm size within a county, we still have a smoother distribution than when using equal weights, but it skews the distribution compared to simply using the average cost of employees by firm size for weighting.
+
+```{r}
+#| histogram-county-exposure-combined-mean,
+#| fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Distribution of the county-level Commerzbank dependence obtained
+#|    using weights obtained from the average value at firm size level within
+#|    a county of the total number of employees and the cost of employees
+#|    combined with the current ratio created from mean total assets and mean
+#|    total liabilities by firm size level within a county,
+#|    compared to the distribution using equal weights."
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.curr_mean.empl_mean),
+        color = "#048BA8", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.curr_mean.staf_mean),
+        color = "#EDB21D", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.staf_mean),
+        color = "#A2EB99", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.13, x = exposure_w.curr_mean.empl_mean,
+            label = labels$exposure_w.curr_mean.empl_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.12, x = exposure_w.curr_mean.staf_mean,
+            label = labels$exposure_w.curr_mean.staf_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.11, x = exposure_w.staf_mean,
+            label = labels$exposure_w.staf_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.staf_mean, y = ..count.. / sum(..count..),
+            fill = "single"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.curr_mean.empl_mean, y = ..count.. / sum(..count..),
+            fill = "empl"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.curr_mean.staf_mean, y = ..count.. / sum(..count..),
+            fill = "staf"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 10) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.01)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c(
+            empl = "#048BA8", staf = "#EDB21D", single = "#A2EB99"
+        ),
+        labels = c(
+            empl = "No. of Employees", staf = "Cost of Employees",
+            single = "Cost of Employees (Simple)"
+        ),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.85, .9))
+```
+
+The following graphs give an overview of the distribution of county-level Commerzbank dependence for the potentially most relevant and useful weighting techniques among those we have been trying to exploit. 
+
+```{r}
+#| facet-county-exposure-histograms,
+#| fig.asp = 1, fig.show = "hold", pos = "center", ow = "50%",
+#| cap = "Distribution of county-level Commerzbank dependence, measured using
+#|    equal weights (first row), weights using the mean value of firm-level
+#|    data of each firm size category pooling balance sheet data from 2004 to
+#|    2008 (second row), and combined weights with the inverse current ratio
+#|    obtained as the average of current liabilities over the average current
+#|    assets of each firm size category. The sample of firms is the newly
+#|    obtained from Amadeus, except for the top right histogram, where the
+#|    measure is computed using the firm sample from the previous draft.",
+#| subcap = c("Equal Weights (Current Firm Sample)",
+#|    "Equal Weights (Past Firm Sample)",
+#|    "Weights for Average Number of Employees",
+#|    "Weights for Average Cost of Employees",
+#|    "Weights for Average Number of Employees combined with Current Ratio",
+#|    "Weights for Average Cost of Employees combined with Current Ratio")
+
+# equal weights current firm sample
+ggplot2::ggplot(county_exposure, aes(x = exposure_mean)) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_mean),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(y = 0.04, x = exposure_mean, label = labels$exposure_mean),
+        hjust = -0.05, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_histogram(
+        aes(y = stat(count / sum(count))),
+        bins = 100,
+        fill = "#048BA8", color = "#777777", alpha = 0.75, size = 0.25
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 15) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.005)) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal()
+# equal weights past firm sample
+ggplot2::ggplot(county_exposure, aes(x = exposure_past_mean)) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_past_mean),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.04, x = exposure_past_mean,
+            label = labels$exposure_past_mean
+        ),
+        hjust = -0.05, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_histogram(
+        aes(y = stat(count / sum(count))),
+        bins = 100,
+        fill = "#EDB21D", color = "#777777", alpha = 0.75, size = 0.25
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 15) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.005)) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal()
+# weights for mean number of employees
+ggplot2::ggplot(county_exposure, aes(x = exposure_w.empl_mean)) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.empl_mean),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.04, x = exposure_w.empl_mean,
+            label = labels$exposure_w.empl_mean
+        ),
+        hjust = -0.05, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_histogram(
+        aes(y = stat(count / sum(count))),
+        bins = 100,
+        fill = "#048BA8", color = "#777777", alpha = 0.75, size = 0.25
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 15) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.005)) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal()
+# weights for mean cost of employees
+ggplot2::ggplot(county_exposure, aes(x = exposure_w.staf_mean)) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.staf_mean),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.04, x = exposure_w.staf_mean,
+            label = labels$exposure_w.staf_mean
+        ),
+        hjust = -0.05, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_histogram(
+        aes(y = stat(count / sum(count))),
+        bins = 100,
+        fill = "#048BA8", color = "#777777", alpha = 0.75, size = 0.25
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 15) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.005)) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal()
+# weights for mean number of employees combined with current ratio
+ggplot2::ggplot(county_exposure, aes(x = exposure_w.curr_mean.empl_mean)) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.curr_mean.empl_mean),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.04, x = exposure_w.curr_mean.empl_mean,
+            label = labels$exposure_w.curr_mean.empl_mean
+        ),
+        hjust = -0.05, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_histogram(
+        aes(y = stat(count / sum(count))),
+        bins = 100,
+        fill = "#048BA8", color = "#777777", alpha = 0.75, size = 0.25
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 15) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.005)) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal()
+# weights for mean cost of employees combined with current ratio
+ggplot2::ggplot(county_exposure, aes(x = exposure_w.curr_mean.staf_mean)) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.curr_mean.staf_mean),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.04, x = exposure_w.curr_mean.staf_mean,
+            label = labels$exposure_w.curr_mean.staf_mean
+        ),
+        hjust = -0.05, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_histogram(
+        aes(y = stat(count / sum(count))),
+        bins = 100,
+        fill = "#048BA8", color = "#777777", alpha = 0.75, size = 0.25
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 15) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.005)) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal()
+```
+
+### Spatial Distribution of Commerzbank Dependence
+
+We acquire the boundaries of the administrative areas (1:250 000) from the [Federal Agency for Cartography and Geodesy of Germany (VG250)](https://gdz.bkg.bund.de/index.php/default/verwaltungsgebiete-1-250-000-ebenen-stand-01-01-vg250-ebenen-01-01.html). The dataset includes the administrative units of the hierarchical administrative levels from the country (state) down to the _Gemeinden_ (municipalities) with administrative boundaries, key-numbers, names as well as designations. Lines are _SingleLines_ in `sf`, whereas areas are _MultiPolygons_. Each area can comprise several single areas, such as regular area with exclaves or inset areas, each of these multipolygons corresponding to a dataset in the attribute table. The data are structured according to levels (country/state), _Länder_ (federal states), _Regierungsbezirke_ (administrative districts), Kreise (districts/counties), _Verwaltungsgemeinschaften_ (administrative associations), _Gemeinden_ (municipalities), whereby the areas contained are directly carrying the attributive information. Spatial reference is UTM projection in zone 32 or 33 Ellipsoid GRS80, Datum ETRS89 (EPSG:4258).
+
+The dataset is divided into the different administrative levels of Germany:
+
+- _Staat_ (country) **STA**
+- _Länder_ (states) **LAN**
+- Administrative districts **RBZ**
+- Districts **KRS** (what we use)
+- Administrative associations **VWG**
+- Municipalities **GEM**
+
+Also, in the dataset are comprised:
+
+- Boundary lines **LI**, in each case the respective highest level is included.
+- Points **PK**, each municipality has a point, representing the heart of the municipality.
+
+Data are updated each year with the statuses in 31.12 and 01.01, and we are using the last updated version in September 2021. There are no major changes in the boundaries from 2016. _Amtliche Gemeindeschlüssel_ (**AGS**) (Official Municipality Key) is the name of what they call **KKZ** in the SOEP and also present in the Kreise codes matching table, which is derived from the ARS through omission of the administrative association. The hierarchical structure of the administrative levels is represented by the _Amtliche Regionalschlüssel_ (**ARS**) (territorial code). ARS and AGS constitute the keys of the products of the statistical offices of the Federal Government and of the Länder. Thus, the integration of statistical data and data synchronization, respectively, can easily be performed (cf. also [DeStatis](https://www.destatis.de)).
+
+Details on the attributes:
+
+- `ADE` administrative level, we want 4 = District
+- `GF` geofactor, which can be 1 (waters without structures), 2 (waters with structures), 3 (land without structures), 4 (land with structure). The indication “waters” refers to the North and Baltic Seas as well as to Lake Constance. Each administrative unit has precisely one record entry with the GF value 4.
+- `ARS` territorial code: 1st-2nd digit for the Land, 3rd digit for the administrative district, 4th-5th digit for the district, 6th-9th digit administrative association, 10th-12th community identification number.
+- `AGS` official municipality key: 1st-2nd digit is for the Land, 3rd digit for the administrative district, 4th-5th digit for the identification number of the district, and 6th-8th digit for the community identification number.
+- `GEN` Geographical Name
+- `BEZ` is the attribute for the district, `GEN` gives the name, and `NBD` says whether the attribute should be used for the full name.
+
+We could have actually used this dataset for the identification of firms, but the other table provides us directly with the KKZ codes and not the AGS, which makes it more reliable. I still don't understand why they are using different names for basically the same codes. For plotting the districts and assign the county values, it is possible to subtract from the shapefile `VGS250_KRS` everything that is not `GF == 4`, which is the land with structure, destring the **AGS** codes and create a new variable kkz_rek from that (they are 401).
+
+
+```{r, districts-shapes}
+germany <- sf::st_read(
+    here::here("data", "shapes", "vg250", "VG250_KRS.shp")
+) %>%
+    dplyr::filter(GF == 4) %>%
+    dplyr::mutate(kkz_rek = as.integer(AGS))
+```
+
+```{r, county-exposure-in-shape}
+germany_exposure <- merge(
+    germany, county_exposure,
+    by = "kkz_rek", all.x = TRUE
+)
+```
+
+Here we plot the spatial distribution of the equally weighted county-level Commerzbank dependence using the current and the past firm sample and the same scale. We also plot the difference in the spatial distribution of the current sample exposure against the past sample. The most striking difference comes from the county that has zero dependence in the current sample, and probably the county for which we have no firms in the current sample. Overall, the current sample calculates smaller values of Commerzbank dependence except for some counties in the south of Germany. 
+
+```{r}
+#| map-equal-weights-old-new,
+#| fig.asp = 1, fig.show = "hold", pos = "center", ow = "50%",
+#| cap = "Spatial Distribution of county-level Commerzbank dependence,
+#|    measured using equal weights, from the current firm sample (left) and
+#|    the past firm sample (right). The district highlighted in red has
+#|    zero Commerzbank dependence in the current firm sample. The bins are
+#|    deciles from the joint distribution of Commerzbank dependence.",
+#| subcap = c("Equal Weights (Current Firm Sample)",
+#|    "Equal Weights (Past Firm Sample)")
+
+exposure_mean_breaks <- county_exposure[
+    , .(kkz_rek, exposure_mean, exposure_past_mean)
+] %>%
+    data.table::melt(id.vars = "kkz_rek") %>%
+    dplyr::summarise(
+        fmin(value),
+        quants = list(
+            quantile(value, probs = seq(0.1, 0.9, 0.1), na.rm = TRUE)
+        ),
+        fmax(value)
+    ) %>%
+    tidyr::unnest_wider(quants) %>%
+    unlist()
+
+tmap::tm_shape(germany_exposure) +
+    tmap::tm_borders(lwd = .25, col = "#777777") +
+    tmap::tm_fill(
+        col = "exposure_mean", breaks = exposure_mean_breaks,
+        style = "fixed",
+        palette = tmaptools::get_brewer_pal("Blues",
+            n = 10,
+            plot = FALSE
+        ),
+        colorNA = "#777777", alpha = .9, title = ""
+    ) +
+    tmap::tm_graticules(
+        lwd = .1, col = "#777777",
+        alpha = .7, labels.size = .5
+    ) +
+    tmap::tm_compass(
+        type = "4star", position = c("right", "bottom"),
+        color.dark = "#777777", text.color = "#777777"
+    ) +
+    tmap::tm_shape(dplyr::filter(germany_exposure, exposure_mean == 0)) +
+    tmap::tm_fill(col = "red") +
+    tmap::tm_layout(frame = FALSE)
+
+tmap::tm_shape(germany_exposure) +
+    tmap::tm_borders(lwd = .25, col = "#777777") +
+    tmap::tm_fill(
+        col = "exposure_past_mean", breaks = exposure_mean_breaks,
+        style = "fixed",
+        palette = tmaptools::get_brewer_pal("Blues",
+            n = 10,
+            plot = FALSE
+        ),
+        colorNA = "#777777", alpha = .9, title = ""
+    ) +
+    tmap::tm_graticules(
+        lwd = .1, col = "#777777",
+        alpha = .7, labels.size = .5
+    ) +
+    tmap::tm_compass(
+        type = "4star", position = c("right", "bottom"),
+        color.dark = "#777777", text.color = "#777777"
+    ) +
+    tmap::tm_layout(frame = FALSE)
+```
+
+```{r}
+#| map-equal-weights-old-new-diff,
+#| fig.asp = 1, fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Difference in Spatial Distribution of county-level Commerzbank
+#|    dependence measured using equal weights, current firm sample against
+#|    past firm sample."
+germany_exposure %>%
+    dplyr::mutate(diff = exposure_mean - exposure_past_mean) %>%
+    tmap::tm_shape() +
+    tmap::tm_borders(lwd = .25, col = "#777777") +
+    tmap::tm_fill(
+        col = "diff", n = 5, style = "pretty",
+        palette = tmaptools::get_brewer_pal("RdBu",
+            n = 5,
+            plot = FALSE
+        ),
+        colorNA = "#777777", title = ""
+    ) +
+    tmap::tm_graticules(
+        lwd = .1, col = "#777777",
+        alpha = .7, labels.size = .5
+    ) +
+    tmap::tm_compass(
+        type = "4star", position = c("right", "bottom"),
+        color.dark = "#777777", text.color = "#777777"
+    ) +
+    tmap::tm_layout(frame = FALSE)
+```
+
+We plot the spatial distribution of the county-level Commerzbank dependence calculated by weighting for the average number of employees and the average cost of employees by firm size category within a county. The re-weighting compared to the equal wights should re-balance the measure for firm heterogeneity in size at county level. The variation from equal weights is stronger for areas where bigger firms are more present, for example Ruhr Valley. The variance of the county exposure measure is much higher compared to equally weighting.
+
+```{r}
+#| map-empl-mean-weights-diff,
+#| fig.asp = 1, fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Spatial Distribution of county-level Commerzbank
+#|    dependence measured using weights obtained from the average number of
+#|    employees by firm size within a county, compared against equal weights."
+germany_exposure %>%
+    dplyr::mutate(diff = exposure_w.empl_mean - exposure_mean) %>%
+    tmap::tm_shape() +
+    tmap::tm_borders(lwd = .25, col = "#777777") +
+    tmap::tm_fill(
+        col = c("exposure_w.empl_mean", "diff"), n = c(10, 5),
+        style = "quantile",
+        palette = list(
+            tmaptools::get_brewer_pal("Blues", n = 10, plot = FALSE),
+            tmaptools::get_brewer_pal("RdBu", n = 5, plot = FALSE)
+        ),
+        colorNA = "#777777", alpha = .9,
+        title = ""
+    ) +
+    tmap::tm_graticules(
+        lwd = .1, col = "#777777",
+        alpha = .7, labels.size = .5
+    ) +
+    tmap::tm_layout(
+        title = c(
+            "County-Level Commerzbank Exposure",
+            "Difference from Equal Weights"
+        ),
+        title.size = .75, frame = FALSE
+    )
+```
+
+```{r}
+#| map-staf-mean-weights-diff,
+#| fig.asp = 1, fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Spatial Distribution of county-level Commerzbank
+#|    dependence measured using weights obtained from the average cost of
+#|    employees by firm size within a county, compared against equal weights."
+germany_exposure %>%
+    dplyr::mutate(diff = exposure_w.staf_mean - exposure_mean) %>%
+    tmap::tm_shape() +
+    tmap::tm_borders(lwd = .25, col = "#777777") +
+    tmap::tm_fill(
+        col = c("exposure_w.staf_mean", "diff"), n = c(10, 5),
+        style = "quantile",
+        palette = list(
+            tmaptools::get_brewer_pal("Blues", n = 10, plot = FALSE),
+            tmaptools::get_brewer_pal("RdBu", n = 5, plot = FALSE)
+        ),
+        colorNA = "#777777", alpha = .9,
+        title = ""
+    ) +
+    tmap::tm_graticules(
+        lwd = .1, col = "#777777",
+        alpha = .7, labels.size = .5
+    ) +
+    tmap::tm_layout(
+        title = c(
+            "County-Level Commerzbank Exposure",
+            "Difference from Equal Weights"
+        ),
+        title.size = .75, frame = FALSE
+    )
+```
+
+We plot the spatial distribution of the county-level Commerzbank dependence calculated by weighting for the average number of employees and the average cost of employees by firm size category within a county. The re-weighting compared to the equal wights should re-balance the measure for firm heterogeneity in size at county level. The variation from equal weights is stronger for areas where bigger firms are more present, for example Ruhr Valley. The variance of the county exposure measure is much higher compared to equally weighting.
+
+To conclude, we plot the spatial distribution of the county-level Commerzbank dependence calculated by combining the weighted average of firm-level Commerzbank dependence within a county with weights for the average number of employees (or average cost of employees) by firm size category within the county and the weighted average of firm-level Commerzbank dependence with weights for the inverse current ratio calculated from the average current assets and the average current liabilities by firm size category within the county. The re-weighting procedure should re-balance the importance of a firm within a county for its size and its exposure to a general liquidity shock in the business cycle. Final values are more balanced.
+
+```{r}
+#| map-curr-empl-mean-weights-diff,
+#| fig.asp = 1, fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Spatial Distribution of county-level Commerzbank
+#|    dependence measured using weights obtained from the average number of
+#|    employees combined with weights obtained from the inverse current ratio
+#|    from average current assets and average current liabilities
+#|    by firm size within a county, compared against equal weights."
+germany_exposure %>%
+    dplyr::mutate(diff = exposure_w.curr_mean.empl_mean - exposure_mean) %>%
+    tmap::tm_shape() +
+    tmap::tm_borders(lwd = .25, col = "#777777") +
+    tmap::tm_fill(
+        col = c("exposure_w.curr_mean.empl_mean", "diff"),
+        n = c(10, 5), style = "quantile",
+        palette = list(
+            tmaptools::get_brewer_pal("Blues", n = 10, plot = FALSE),
+            tmaptools::get_brewer_pal("RdBu", n = 5, plot = FALSE)
+        ),
+        colorNA = "#777777", alpha = .9,
+        title = ""
+    ) +
+    tmap::tm_graticules(
+        lwd = .1, col = "#777777",
+        alpha = .7, labels.size = .5
+    ) +
+    tmap::tm_layout(
+        title = c(
+            "County-Level Commerzbank Exposure",
+            "Difference from Equal Weights"
+        ),
+        title.size = .75, frame = FALSE
+    )
+```
+
+```{r}
+#| map-curr-staf-mean-weights-diff,
+#| fig.asp = 1, fig.show = "hold", pos = "center", ow = "75%",
+#| cap = "Spatial Distribution of county-level Commerzbank
+#|    dependence measured using weights obtained from the average cost of
+#|    employees combined with weights obtained from the inverse current ratio
+#|    from average current assets and average current liabilities
+#|    by firm size within a county, compared against equal weights."
+germany_exposure %>%
+    dplyr::mutate(diff = exposure_w.curr_mean.staf_mean - exposure_mean) %>%
+    tmap::tm_shape() +
+    tmap::tm_borders(lwd = .25, col = "#777777") +
+    tmap::tm_fill(
+        col = c("exposure_w.curr_mean.staf_mean", "diff"),
+        n = c(10, 5), style = "quantile",
+        palette = list(
+            tmaptools::get_brewer_pal("Blues", n = 10, plot = FALSE),
+            tmaptools::get_brewer_pal("RdBu", n = 5, plot = FALSE)
+        ),
+        colorNA = "#777777", alpha = .9,
+        title = ""
+    ) +
+    tmap::tm_graticules(
+        lwd = .1, col = "#777777",
+        alpha = .7, labels.size = .5
+    ) +
+    tmap::tm_layout(
+        title = c(
+            "County-Level Commerzbank Exposure",
+            "Difference from Equal Weights"
+        ),
+        title.size = .75, frame = FALSE
+    )
+```
+
+```{r, save-county-exposure, eval = FALSE}
+# write county exposure
+fst::write_fst(
+    county_exposure,
+    here::here("data", "exposure", "county_exposure.fst")
+)
+readr::write_delim(
+    county_exposure,
+    here::here("data", "exposure", "county_exposure.csv"),
+    delim = ";"
+)
+```
+
+```{r, save-firms-frequency-per-exposure, eval = FALSE}
+# write frequency of firms by exposure measure
+fst::write_fst(
+    firms_count,
+    here::here("data", "exposure", "firms_count.fst")
+)
+readr::write_delim(
+    firms_count,
+    here::here("data", "exposure", "firms_count.csv"),
+    delim = ";"
+)
+```
+
+
+## References

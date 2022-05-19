@@ -1,0 +1,613 @@
+---
+title: "Credit Shocks and Populism"
+subtitle: "Post-Estimate Tables and Graphs"
+author: "Alessandro Pizzigolotto"
+institute: "Norwegian School of Economics (NHH)"
+bibliography: "`r here::here('docs', 'references', 'CreditPopulismRefs.bib')`"
+csl: "`r here::here('docs', 'references','harvard.csl')`"
+date: "`r format(Sys.Date(), '%d %B, %Y')`"
+github:
+  user: chickymonkeys
+  repo: CreditPopulism
+  branch: main
+output:
+  bookdown::pdf_document2:
+    highlight: kate
+    df_print: kable
+    number_sections: true    # sections numbering
+    fig_caption: true       # allow captions
+    citation_package: natbib # citation package natbib
+    extra_dependencies: ["booktabs", "soul", "caption"]
+---
+
+```{r setup, include = FALSE}
+## -----------------------------------------------------------------------------
+## Setup Chunk and Package Loading
+##
+
+## Global RMarkdown Chunk Options
+knitr::opts_chunk$set(
+    echo = FALSE,
+    message = FALSE,
+    warning = FALSE,
+    error = FALSE,
+    tidy = FALSE,
+    cache = FALSE,
+    results = "asis"
+)
+
+## Chunk Aliases and Root Directory
+knitr::opts_knit$set(
+    root.dir = here::here(),
+    aliases = c(
+        h = "fig.height", # height of figure
+        w = "fig.width", # width of figure
+        oh = "out.height", # height of output
+        ow = "out.width", # width of output
+        pos = "fig.align", # figure alignment
+        cap = "fig.cap", # figure long caption
+        float = "fig.subcap", # figure sub-caption w/ float
+        cols = "fig.ncol", # number of columns in float
+        sep = "fig.sep" # figures separator
+    )
+)
+
+## Package Loading
+pacman::p_load(
+    dplyr,
+    stringr,
+    tidyr,
+    readr,
+    lubridate,
+    collapse,
+    data.table,
+    fst,
+    ggplot2
+)
+```
+
+I have cleaned and created the sample for the repeated cross-sections of individuals in the German Socio-Economic Panel from 2000 to 2016, excluding individuals younger than 16 (which is the age for voting for many local elections in Germany). The county exposure is obtained from the sample I have retrieved in the past, and on which the first draft was prepared. I will try to look at results with the sample of firms with financial data I have recently retrieved later. I have done a quick test with the county exposure obtained as a simple county-level average for the latter and results are smaller in magnitude but still significant. 
+
+The main specification in Table \ref{tab:reducedFormBase} is the following
+
+$$ y_{ikt} = \delta_{k} + \lambda_{t} + \beta Exposure_{k} \times Post + \alpha_1 X_{ikt} + \alpha_2 K_{ikt} + \varepsilon_{ikt} $$
+Contrary to before, where keeping all individuals in 2006 (pre-shock) wave and following them before and after I was controlling for pre-shock characteristics of those individuals, here I am using time-varying controls at individual and household level. Those are gender, age and age squared, unemployment dummmy, employment categories in dummies, years of education, household size, number of children, home-ownership, having outstanding loans (dummy), and log household disposable income. I also include time-varying county-level characteristics as controls, which are ln population, ln GDP and share of foreigners. 
+
+\begin{table}[htbp!]
+\centering
+\caption{The Effect of the Credit Shock on Political Preferences: Baseline Results}
+\label{tab:reducedFormBase}
+\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}
+\resizebox{.9\textwidth}{!}{%
+\begin{tabular}{l*{1}ccccc}
+\toprule
+& \multicolumn{5}{c}{\textbf{Intention to vote for Populist Party}}
+\\ 
+& \multicolumn{1}{c}{(1)}
+& \multicolumn{1}{c}{(2)}
+& \multicolumn{1}{c}{(3)}
+& \multicolumn{1}{c}{(4)}
+& \multicolumn{1}{c}{(5)}
+\\ 
+
+
+
+\midrule
+
+$ Exposure_{k}\ \times \ Post $&       0.421\sym{**} &       0.407\sym{**} &       0.454\sym{***}&       0.461\sym{***}&       0.576\sym{***}\\
+           &     (0.170)         &     (0.168)         &     (0.140)         &     (0.143)         &     (0.184)         \\
+\\
+Number of Observations&     357,817         &     343,098         &     308,819         &     308,819       &     296,772         \\
+Adjusted $ R $-Squared&       0.050         &       0.055         &       0.052         &       0.052       &       0.508         \\
+Number of Counties&         401         &         401         &         400         &         400         & 400         \\
+
+
+
+\midrule
+
+County-Level FE&         Yes         &         Yes         &         Yes         &         Yes         &    Yes         \\
+Wave FE     &         Yes         &         Yes         &         Yes         &         Yes         &       Yes         \\
+Individual FE&          No         &          No         &          No         &          No         &      Yes         \\
+Individual Controls&          No         &         Yes         &         Yes         &         Yes         &         Yes         \\
+Household Controls&          No         &          No         &         Yes         &         Yes         & Yes         \\
+Regional Controls&          No         &          No         &          No         &         Yes         & Yes         \\
+
+
+
+
+
+\bottomrule
+\end{tabular}
+}%
+\end{table}
+
+In Column 1 of the table I include only the TWFE, in Column 2, 3 and 4 I add subsequently time-varying individual, household and county characteristics. In Column 5 I include individual FE: the survey is a rolling panel and individuals stay in the survey for more than one year, on average should be four or five years. Including individual FE should take care of the unobserved time-invariant characteristics. However, I will keep Column 4 as my main specification. I have rescaled coefficients and standard errors by 100 to interpret them directly as percentage points. **Should I add controls for county-level FE interacted with a linear (or non-linear) time trend?**
+
+The results are slightly smaller in magnitude compared to the unbalanced panel I was exploiting before, but quite significant. The indicator variable for the individual preference towards populist parties has a overall mean of 3.44%, with standard deviation of 18.22%. With a naive interpretation of the coefficients, one standard deviation higher exposure at county level increases preferences towards populist parties by 0.5 percentage points. I think it is quite sizable considering the baseline mean of populist preferences.
+
+I have then created different indicator variables based on the position of a county in the exposure distribution. Just to remind you how the county-level exposure distribution looks like, this is the histogram in Figure \@ref(fig:histogram-county-exposure-simple) (calculated as equally weighted average on the firms I already had before).
+
+```{r, read-county-exposure, include = FALSE}
+county_exposure <- fst::read_fst(
+  here::here("data", "exposure", "county_exposure.fst")) %>%
+  as.data.table()
+# summaries for labels
+counties_mean <- county_exposure[
+    , lapply(.SD, fmean),
+    .SDcols = patterns("^exposure_.")
+]
+counties_median <- county_exposure[
+    , lapply(.SD, fmedian),
+    .SDcols = patterns("^exposure_.")
+]
+counties_10 <- county_exposure[
+    , lapply(.SD, fnth, 0.1),
+    .SDcols = patterns("^exposure_.")
+]
+counties_25 <- county_exposure[
+    , lapply(.SD, fnth, 0.25),
+    .SDcols = patterns("^exposure_.")
+]
+counties_75 <- county_exposure[
+    , lapply(.SD, fnth, 0.75),
+    .SDcols = patterns("^exposure_.")
+]
+counties_90 <- county_exposure[
+    , lapply(.SD, fnth, 0.90),
+    .SDcols = patterns("^exposure_.")
+]
+```
+
+```{r}
+#| histogram-county-exposure-simple,
+#| pos = "center", w = 9, h = 6, fig.show = "hold",
+#| cap = "Histogram of County-Level Commerzbank Dependence (Past Firms' Sample)"
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::stat_bin(
+        aes(x = exposure_past_mean, y = ..count.. / sum(..count..)),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#1984C5", fill = "#A7D5ED"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_past_mean),
+        color = "#DE6E56", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.06, x = exposure_past_mean,
+            label = paste0("Mean: ", round(exposure_past_mean, 3))
+        ),
+        hjust = -0.02, color = "#DE6E56", size = 3
+    ) +
+    ggplot2::geom_vline(
+        data = counties_median,
+        aes(xintercept = exposure_past_mean),
+        color = "#E1A692", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_median,
+        aes(
+            y = 0.07, x = exposure_past_mean,
+            label = paste0("Median: ", round(exposure_past_mean, 3))
+        ),
+        hjust = -0.02, color = "#E1A692", size = 3
+    ) +
+    ggplot2::geom_vline(
+        data = counties_10,
+        aes(xintercept = exposure_past_mean),
+        color = "#C23728", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_10,
+        aes(
+            y = 0.08, x = exposure_past_mean,
+            label = paste0("10th: ", round(exposure_past_mean, 3))
+        ),
+        hjust = -0.02, color = "#C23728", size = 3
+    ) +
+    ggplot2::geom_vline(
+        data = counties_90,
+        aes(xintercept = exposure_past_mean),
+        color = "#C23728", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_90,
+        aes(
+            y = 0.08, x = exposure_past_mean,
+            label = paste0("90th: ", round(exposure_past_mean, 3))
+        ),
+        hjust = -0.02, color = "#C23728", size = 3
+    ) +
+    ggplot2::geom_vline(
+        data = counties_25,
+        aes(xintercept = exposure_past_mean),
+        color = "#E14B31", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_25,
+        aes(
+            y = 0.01, x = exposure_past_mean,
+            label = paste0("25th: ", round(exposure_past_mean, 3))
+        ),
+        hjust = -0.02, color = "#E14B31", size = 3
+    ) +
+    ggplot2::geom_vline(
+        data = counties_75,
+        aes(xintercept = exposure_past_mean),
+        color = "#E14B31", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_75,
+        aes(
+            y = 0.01, x = exposure_past_mean,
+            label = paste0("75th: ", round(exposure_past_mean, 3))
+        ),
+        hjust = -0.02, color = "#E14B31", size = 3
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 15) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.01)) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+        strip.background = element_blank(),
+        panel.background = element_blank(),
+        axis.text = element_text(color = "#2D2D2D", size = 10),
+        axis.text.x = element_text(angle = 45),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(
+            color = "#E2E2E2",
+            size = 0.1,
+        )
+    )
+```
+
+In Table \ref{tab:reducedFormDummies2009} I compare different specifications where $D_{k}$ is an indicator variable of whether county $k$ assumes the treatment at a certain threshold. Here, the coefficients are not re-scaled (TODO I need to change the code). In Column 1, I assign $D_{k}$ to one when the county exposure is higher than the median of the distribution, and I similarly do in Column 2 and 3 for the $75^{th}$ and the $90^{th}$ percentiles as threshold. In Column 4 and 5 I assign to zero counties with exposure till the $25^{th}$ or $10^{th}$ percentile, and to one counties with exposure after the $75^{th}$ or $90^{th}$ percentile, respectively. In the last two columns, I drop all counties in the middle.
+
+
+\begin{table}[htbp!]
+\centering
+\caption{The Effect of the Credit Shock on Political Preferences: Using Indicator Variables and 2009 as Reference Year}
+\label{tab:reducedFormDummies2009}
+\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}
+\resizebox{.9\textwidth}{!}{%
+\begin{tabular}{l*{1}ccccc}
+\toprule
+& \multicolumn{5}{c}{\textbf{Intention to vote for Populist Party}}
+\\ 
+& \multicolumn{1}{c}{Median}
+& \multicolumn{1}{c}{ $ 75^{th} $ }
+& \multicolumn{1}{c}{ $ 90^{th} $ }
+& \multicolumn{1}{c}{ $ 25^{th} $ - $ 75^{th} $ }
+& \multicolumn{1}{c}{ $ 10^{th} $ - $ 90^{th} $ }
+\\ 
+
+
+
+\midrule
+
+$ D_{k}\ \times \ Post $&       0.009\sym{***}&       0.007\sym{*}  &       0.010\sym{**} &       0.009\sym{*}  &       0.011\sym{**} \\
+           &     (0.003)         &     (0.004)         &     (0.004)         &     (0.004)         &     (0.004)         \\
+\\
+Number of Observations&     308,819         &     308,819         &     308,819         &     149,713         &      60,857         \\
+Adjusted $ R $-Squared&       0.052         &       0.052         &       0.052         &       0.048         &       0.047         \\
+Number of Counties&         400         &         400         &         400         &         199         &   80         \\
+
+
+
+\midrule
+
+County-Level FE&         Yes         &         Yes         &         Yes         &         Yes         &      Yes         \\
+Wave FE     &         Yes         &         Yes         &         Yes         &         Yes         &         Yes         \\
+Individual FE&          No         &          No         &          No         &          No         &        No         \\
+Individual Controls&         Yes         &         Yes         &         Yes         &         Yes         & Yes         \\
+Household Controls&         Yes         &         Yes         &         Yes         &         Yes         &   Yes         \\
+Regional Controls&         Yes         &         Yes         &         Yes         &         Yes         &    Yes         \\
+
+
+\bottomrule
+\end{tabular}
+}%
+%\caption*{\footnotesize \textit{Notes:}~This table shows ... \hl{XXX}.}
+\end{table}
+
+I do the same thing using 2008 as reference year in Table \ref{tab:reducedFormDummies2008} (rescaled coefficients by 100).
+
+\begin{table}[htbp!]
+\centering
+\caption{The Effect of the Credit Shock on Political Preferences: Using Indicator Variables and 2008 as Reference Year}
+\label{tab:reducedFormDummies2008}
+\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}
+\resizebox{.9\textwidth}{!}{%
+\begin{tabular}{l*{1}ccccc}
+\toprule
+& \multicolumn{5}{c}{\textbf{Intention to vote for Populist Party}}
+\\ 
+& \multicolumn{1}{c}{\textbf{Median}}
+& \multicolumn{1}{c}{\textbf{ $ 75^{th} $ }}
+& \multicolumn{1}{c}{\textbf{ $ 90^{th} $ }}
+& \multicolumn{1}{c}{\textbf{ $ 25^{th} $ - $ 75^{th} $ }}
+& \multicolumn{1}{c}{\textbf{ $ 10^{th} $ - $ 90^{th} $ }}
+\\ 
+
+
+
+\midrule
+
+$ D_{k}\ \times \ Post $&       0.902\sym{***}&       0.714\sym{*}  &       1.022\sym{**} &       0.857\sym{*}  &       1.075\sym{**} \\
+           &     (0.312)         &     (0.416)         &     (0.415)         &     (0.448)         &     (0.443)         \\
+\\
+Number of Observations&     308,819         &     308,819         &     308,819         &     149,713       &      60,857         \\
+Adjusted $ R $-Squared&       0.052         &       0.052         &       0.052         &       0.048       &       0.047         \\
+Number of Counties&         400         &         400         &         400         &         199         & 80         \\
+
+
+
+\midrule
+
+County-Level FE&         Yes         &         Yes         &         Yes         &         Yes         &    Yes         \\
+Wave FE     &         Yes         &         Yes         &         Yes         &         Yes         &       Yes         \\
+Individual FE&          No         &          No         &          No         &          No         &      No         \\
+Individual Controls&         Yes         &         Yes         &         Yes         &         Yes         &         Yes         \\
+Household Controls&         Yes         &         Yes         &         Yes         &         Yes         & Yes         \\
+Regional Controls&         Yes         &         Yes         &         Yes         &         Yes         & Yes         \\
+
+
+
+
+
+\bottomrule
+\end{tabular}
+}%
+%\caption*{\footnotesize \textit{Notes:}~This table shows ... \hl{XXX}.}
+\end{table}
+
+Based on how I define these indicator variables, I plot different event study plots. My impression is they are very noisy but it looks okay-ish. The median exposure event study plot gives a good idea of the trends before and after, whereas 75th and 90th are fuzzy. I think it comes straight from the distribution of the treatment in the end, so we should be careful with that (and that is why I would like to re-weight a bit for firms' heterogeneity within a county, if it makes sense). The 25-75th and 10th-90th splits are also quite significant. From Table \ref{tab:reducedFormDummies2009} we see that, when pooling and using the indicator variable instead of the continous treatment, the result is positive and significant in any case.
+
+```{r, event-study-plot-results-2009}
+event_study_het_2009 <- readr::read_delim(
+    here::here("out", "data", "event_study_plot_het_2009.csv"),
+    delim = ",")
+event_study_median_2009 <- readr::read_delim(
+    here::here("out", "data", "event_study_plot_median_2009.csv"),
+    delim = ",")
+event_study_p75_2009 <- readr::read_delim(
+    here::here("out", "data", "event_study_plot_p75_2009.csv"),
+    delim = ",")
+event_study_p90_2009 <- readr::read_delim(
+    here::here("out", "data", "event_study_plot_p90_2009.csv"),
+    delim = ",")
+event_study_iqr_2009 <- readr::read_delim(
+    here::here("out", "data", "event_study_plot_iqr_2009.csv"),
+    delim = ",")
+event_study_1090_2009 <- readr::read_delim(
+    here::here("out", "data", "event_study_plot_1090_2009.csv"),
+    delim = ",")
+```
+
+```{r, event-study-theme-2009}
+# https://projects.susielu.com/viz-palette?colors=[%22#1984c5%22,%22#22a7f0%22,%22#63bff0%22,%22#a7d5ed%22,%22#e2e2e2%22,%22#e1a692%22,%22#de6e56%22,%22#e14b31%22,%22#c23728%22]&backgroundColor=%22white%22&fontColor=%22black%22&mode=%22normal%22
+event_study_soep <- function(data) {
+    data %>%
+        tidyr::complete(wave = seq(2000, 2016)) %>%
+        replace(is.na(.), 0) %>%
+        ggplot2::ggplot() +
+            ggplot2::geom_ribbon(
+                aes(ymax = ul, ymin = ll, x = wave),
+                alpha = 0.3, fill = "#A7D5ED", color = "#22A7F0", size = 0.1
+            ) +
+            ggplot2::geom_vline(
+                xintercept = 2009,
+                color = "#2D2D2D",
+                linetype = "dashed"
+            ) +
+            ggplot2::geom_point(
+                aes(x = wave, y = b),
+                color = "#1984C5"
+            ) +
+            ggplot2::geom_line(
+                aes(x = wave, y = b),
+                color = "#1984C5"
+            ) +
+            ggplot2::scale_x_continuous(breaks = seq(2000, 2016)) +
+            ggplot2::scale_y_continuous(n.breaks = 10) +
+            ggplot2::xlab("Year") +
+            ggplot2::ylab("Point Estimate (C.I.): Percentage Points") +
+            ggplot2::theme_minimal() +
+            ggplot2::theme(
+                strip.background = element_blank(),
+                panel.background = element_blank(),
+                axis.ticks = element_blank(),
+                axis.text = element_text(color = "#2D2D2D", size = 10),
+                axis.text.x = element_text(angle = 45),
+                panel.grid.minor = element_blank(),
+                panel.grid.major = element_line(
+                    color = "#E2E2E2",
+                    size = 0.1,
+                )
+            )
+}
+```
+
+```{r}
+#| event-study-median-graph-2009, pos = "center", w = 6, h = 4, fig.show = "hold",
+#| cap = "Event-Study Plot with Median Exposure as Indicator Variable, Reference Year: 2009."
+event_study_median_2009 %>% event_study_soep()
+```
+
+```{r}
+#| event-study-p75-graph-2009, pos = "center", w = 6, h = 4, fig.show = "hold",
+#| cap = "Event-Study Plot with 75th Percentile's Exposure as Indicator Variable, Reference Year: 2009."
+event_study_p75_2009 %>% event_study_soep()
+```
+
+```{r}
+#| event-study-p90-graph-2009, pos = "center", w = 6, h = 4, fig.show = "hold",
+#| cap = "Event-Study Plot with 90th Percentile's Exposure as Indicator Variable, Reference Year: 2009."
+event_study_p90_2009 %>% event_study_soep()
+```
+
+```{r}
+#| event-study-iqr-graph-2009, pos = "center", w = 6, h = 4, fig.show = "hold",
+#| cap = "Event-Study Plot with 25th and 75th Percentiles as Indicator Variable, Reference Year: 2009."
+event_study_iqr_2009 %>% event_study_soep()
+```
+
+```{r}
+#| event-study-1090-graph-2009, pos = "center", w = 6, h = 4, fig.show = "hold",
+#| cap = "Event-Study Plot with 10th and 90th Percentiles as Indicator Variable, Reference Year: 2009."
+event_study_1090_2009 %>% event_study_soep()
+```
+
+\clearpage\newpage
+
+Just for completeness, I have add the event-study plot with the continuous treatment.
+
+```{r}
+#| event-study-het-graph, pos = "center", w = 6, h = 4, fig.show = "hold",
+#| cap = "Event-Study Plot with the Continuous Treatment, Reference Year: 2009."
+event_study_het_2009 %>% event_study_soep()
+```
+
+```{r, event-study-plot-results-2008}
+event_study_het_2008 <- readr::read_delim(
+    here::here("out", "data", "event_study_plot_het_2008.csv"),
+    delim = ",")
+event_study_median_2008 <- readr::read_delim(
+    here::here("out", "data", "event_study_plot_median_2008.csv"),
+    delim = ",")
+event_study_p75_2008 <- readr::read_delim(
+    here::here("out", "data", "event_study_plot_p75_2008.csv"),
+    delim = ",")
+event_study_p90_2008 <- readr::read_delim(
+    here::here("out", "data", "event_study_plot_p90_2008.csv"),
+    delim = ",")
+event_study_iqr_2008 <- readr::read_delim(
+    here::here("out", "data", "event_study_plot_iqr_2008.csv"),
+    delim = ",")
+event_study_1090_2008 <- readr::read_delim(
+    here::here("out", "data", "event_study_plot_1090_2008.csv"),
+    delim = ",")
+```
+
+
+
+```{r}
+# ggplot2 theme
+event_study_layout <- list(
+    # vertical line on t = -1
+    ggplot2::geom_vline(
+        xintercept = 2008, color = "#003081", linetype = "solid"),
+    # horizontal line at zero
+    ggplot2::geom_hline(
+        yintercept = 0, color = "#003081", linetype = "solid"),
+    ggplot2::scale_x_continuous(breaks = seq(2000, 2016, 2)),
+    ggplot2::scale_y_continuous(n.breaks = 10),
+    ggplot2::xlab("Year"),
+    ggplot2::ylab("Point Estimate (C.I.): Percentage Points"),
+    ggplot2::theme(
+        axis.text = element_text(color = "#2D2D2D", size = 10),
+        axis.ticks.length = unit(0.25, "cm"),
+        strip.background = element_blank(),
+        panel.background = element_blank(),
+        panel.grid = element_blank(),
+        panel.border = element_rect(colour = "#2D2D2D", fill = NA, size = 0.75)
+    )
+)
+```
+
+```{r, event-study-theme-2008}
+# function to create an event study plot with the aggregate estimates
+event_study_soep <- function(data) {
+    # re-scaling the coefficients to read directly as percentage points
+    data <- data %>%
+        dplyr::mutate(across(matches("b|ll|ul|se"), ~ .x * 100))
+    # aggregated estimates for the lags excluding t-1
+    before <- data %>%
+        dplyr::filter(wave == 0) %>%
+        dplyr::mutate(wave = 2000) %>%
+        tidyr::complete(wave = seq(2000, 2007)) %>%
+        tidyr::fill(everything())
+    # aggregated estimates for the leads from t0
+    after <- data %>%
+        dplyr::filter(wave == 1) %>%
+        dplyr::mutate(wave = 2009) %>%
+        tidyr::complete(wave = seq(2009, 2016)) %>%
+        tidyr::fill(everything())
+    
+    data %>%
+        dplyr::filter(wave > 1) %>%
+        tidyr::complete(wave = seq(2000, 2016)) %>%
+        replace(is.na(.), 0) %>%
+        ggplot2::ggplot() +
+            ggplot2::geom_line(
+                data = before, aes(x = wave, y = b),
+                color = "#1984C5", size = 1) +
+            ggplot2::geom_ribbon(
+                data = before, aes(x = wave, ymin = ll, ymax = ul),
+                color = "#1984C5", fill = NA, alpha = .1, size = .4) +
+            ggplot2::geom_linerange(
+                data = dplyr::filter(before, wave %in% c(2000, 2007)),
+                aes(ymax = ul, ymin = ll, y = b, x = wave),
+                color = "#1984C5", size = 0.4) +
+            ggplot2::geom_line(
+                data = after, aes(x = wave, y = b),
+                color = "#1984C5", size = 1) +
+            ggplot2::geom_ribbon(
+                data = after, aes(x = wave, ymin = ll, ymax = ul),
+                color = "#1984C5", fill = "#003081", alpha = .1, size = .4) +
+            ggplot2::geom_linerange(
+                data = dplyr::filter(after, wave %in% c(2009, 2016)),
+                aes(ymax = ul, ymin = ll, y = b, x = wave),
+                color = "#1984C5", size = 0.4) +
+            ggplot2::geom_point(
+                aes(y = b, x = wave),
+                color = "#1984C5", size = 3, shape = 1, stroke = 1) +
+            ggplot2::geom_linerange(
+                aes(ymax = ul, ymin = ll, y = b, x = wave),
+                color = "#1984C5", size = 0.75
+            ) + event_study_layout
+}
+```
+
+```{r}
+#| event-study-median-graph-2008, pos = "center", w = 6, h = 4, fig.show = "hold",
+#| cap = "Event-Study Plot with Median Exposure as Indicator Variable, Reference Year: 2008."
+event_study_median_2008 %>% event_study_soep()
+```
+
+
+```{r}
+#| event-study-p75-graph-2008, pos = "center", w = 6, h = 4, fig.show = "hold",
+#| cap = "Event-Study Plot with 75th Percentile's Exposure as Indicator Variable, Reference Year: 2008."
+event_study_p75_2008 %>% event_study_soep()
+```
+
+```{r}
+#| event-study-p90-graph-2008, pos = "center", w = 6, h = 4, fig.show = "hold",
+#| cap = "Event-Study Plot with 90th Percentile's Exposure as Indicator Variable, Reference Year: 2008."
+event_study_p90_2008 %>% event_study_soep()
+```
+
+```{r}
+#| event-study-iqr-graph-2008, pos = "center", w = 6, h = 4, fig.show = "hold",
+#| cap = "Event-Study Plot with 25th and 75th Percentiles as Indicator Variable, Reference Year: 2008."
+event_study_iqr_2008 %>% event_study_soep()
+```
+
+```{r}
+#| event-study-1090-graph-2008, pos = "center", w = 6, h = 4, fig.show = "hold",
+#| cap = "Event-Study Plot with 10th and 90th Percentiles as Indicator Variable, Reference Year: 2008."
+event_study_1090_2008 %>% event_study_soep()
+```
+
+\clearpage\newpage
+
+Just for completeness, I have add the event-study plot with the continuous treatment.
+
+```{r}
+#| event-study-het-2008-graph, pos = "center", w = 6, h = 4, fig.show = "hold",
+#| cap = "Event-Study Plot with the Continuous Treatment, Reference Year: 2008."
+event_study_het_2008 %>% event_study_soep()
+```

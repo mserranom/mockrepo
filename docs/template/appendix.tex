@@ -1,0 +1,141 @@
+\documentclass[11pt]{article}
+
+% include style package preamble
+\usepackage{preamble}
+
+% Babel dictionaries, include the languages I use in the paper
+\usepackage[main=british,latin]{babel}
+
+% relative pathnames for figures and tables
+\newcommand*{\TablesPath}{./tables/}
+\makeatletter
+\newcommand*\ExpandableInput[1]{\@@input#1 }
+\makeatother
+\graphicspath{ {../../res/figures/}{./figures/} } % Figures Path
+
+% High-Res Pictures Option
+\DeclareGraphicsExtensions{.pdf, .png}
+
+%----------------------------------------------------------------------------- %
+%   External Appendix                                                          %
+%----------------------------------------------------------------------------- %
+
+\usepackage{xr}
+\externaldocument{template}
+\usepackage[toc,page]{appendix}
+
+
+%----------------------------------------------------------------------------- %
+%   Working Paper Metadata                                                     %
+%----------------------------------------------------------------------------- %
+
+% Citation Aliases (if any)
+% 10.5684/soep-core.v35
+
+% Dates
+\usepackage[useregional]{datetime2}
+% if I want to insert a specific date
+\newcommand{\thedate}{\DTMdisplaydate{2017}{02}{21}{-1}}
+\newcommand{\monthyeardate}{%
+  \DTMenglishmonthname{\@dtm@month} \@dtm@year
+}
+
+% Here you can change the date presented in the paper title
+% If I want a specific date I put in the date
+% \date{This Version: \thedate}
+% or if I want the date of today I just insert
+\date{This Version: \today}
+% or if I want just month and year
+% \date{This Version: \monthyeardate}
+% or I just remove it
+%\date{}
+
+% main title 
+\title{Insert a Nice Title here with Title Case\thanks{Acknowledgements with \lipsum[2]. Use footnote for providing further information about author (webpage, alternative address) \emph{and} funding agencies.}}
+% optional subtitle, leave empty if you dont want it
+\renewcommand{\subtitle}{An (optional) Nice Subtitle for the Paper}
+
+\author{
+    {David S.~Hippocampus}\thanks{Department of Computer Science, Pittsburgh, PA 15213, \texttt{hippo@cs.cranberry-lemon.edu}.} \\
+    Department of Computer Science\\
+    Cranberry-Lemon University\\
+    %Pittsburgh, PA 15213 \\
+    \texttt{hippo@cs.cranberry-lemon.edu} \\
+    %% examples of more authors
+    \And
+    {Elias D.~Striatum}\thanks{Department of Electrical Engineering, Santa Narimana, Levand, \texttt{stariate@ee.mount-sheikh.edu}.} \\
+    Department of Electrical Engineering\\
+    Mount-Sheikh University\\
+    %Santa Narimana, Levand \\
+    \texttt{stariate@ee.mount-sheikh.edu} \\
+    \AND
+    {Elias D.~Striatum}\thanks{Department of Electrical Engineering, Santa Narimana, Levand, \texttt{stariate@ee.mount-sheikh.edu}.} \\
+    Department of Electrical Engineering\\
+    Mount-Sheikh University\\
+    %Santa Narimana, Levand \\
+    \texttt{stariate@ee.mount-sheikh.edu} \\
+    %% \And
+    %% Coauthor \\
+    %% Affiliation \\
+    %% Address \\
+    %% \texttt{email} \\
+    %% \And
+    %% Coauthor \\
+    %% Affiliation \\
+    %% Address \\
+    %% \texttt{email} \\
+}
+
+%%% Add PDF metadata to help others organize their library
+%%% Once the PDF is generated, you can check the metadata with
+%%% $ pdfinfo template.pdf
+\hypersetup{
+    pdftitle={Insert a Nice Title here with Title Case},
+    pdfsubject={q-bio.NC, q-bio.QM},
+    pdfauthor={David S.~Hippocampus, Elias D.~Striatum},
+    pdfkeywords={First keyword, Second keyword, More},
+}
+
+%----------------------------------------------------------------------------- %
+%   TITLE PAGE                                                                 %
+%----------------------------------------------------------------------------- %
+
+\begin{document}
+\maketitle
+
+\renewcommand{\thefootnote}{\arabic{footnote}}
+\setcounter{footnote}{0} 
+
+%----------------------------------------------------------------------------- %
+%   appendix                                                                   %
+%----------------------------------------------------------------------------- %
+
+\appendix 
+%	\part*{Appendix}\label{app:dix}
+	\pagenumbering{Arabic}
+	\renewcommand*{\thepage}{A\arabic{page}}
+	\numberwithin{equation}{section}
+	\renewcommand{\thetable}{A\arabic{table}}
+	\renewcommand{\thefigure}{A\arabic{figure}}	
+	
+	\vspace{-3em}
+	
+\tableofcontents	
+
+%-------------------------------------------------------------------	  
+\section{Data Appendix}\label{app:b}
+%-------------------------------------------------------------------	
+In this section, I deliver additional tables of summary statistics for macro data and microdata used as monetary policy shocks, macroeconomic and financial aggregates, and household wealth through three monetary policy channels. First, I present macro data, and then I give detailed statistics on the level of households. Finally, I show the histogram of the distribution of household wealth across the country and the region. 
+
+%\clearpage	
+%{\small
+	%\bibliographystyle{jpe} % is refer to the Journal of Political Economy
+	%\bibliographystyle{apecon}
+	%\bibliographystyle{ier}
+%	\bibliographystyle{aea}  % is refer to the American Economic Association
+	%\bibliographystyle{ecca} % is refer to the Journal of Economica
+%	\bibliography{References}
+%}	
+%--------------------------------------------------------------------
+
+\end{document}

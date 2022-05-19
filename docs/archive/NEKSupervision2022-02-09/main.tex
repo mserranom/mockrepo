@@ -1,0 +1,263 @@
+\documentclass{beamer}
+
+% Math Fonts
+\usepackage{amsmath,amsfonts,amssymb,amsthm,bm,dsfont} % Math Tweaks
+\usepackage{booktabs}
+\usepackage{multicol}
+\usepackage{graphicx}
+\usepackage{adjustbox} % resize big features in beamer
+\usepackage{float}
+
+% Babel sillabation, Fish and Chips folks
+\usepackage[british]{babel}%
+
+% Use natbib bibliography
+\usepackage[semicolon,authoryear]{natbib}
+
+%Information to be included in the title page:
+\title{Identification Design with Non-Binary Treatments}
+\subtitle{Some caveats I would like to discuss}
+\author{Alessandro Pizzigolotto}
+%\institute{Overleaf}
+\date{
+NEK Group Supervision\\
+\today}
+
+\begin{document}
+
+\frame{\titlepage}
+
+% --------------------------------------------------------------
+
+\section{Introduction}
+
+\begin{frame}\frametitle{Introduction}
+    
+    \begin{itemize}
+        % Starting from the Christmas break, among other things
+        \item I took a 'step back' in my populism paper to analyse all the building blocks
+        \item Focus on the identification design to integrate with the flourishing DIDs and TWFE literature
+        \item Identification design using non-binary treatment and multiple periods 
+    \end{itemize}
+
+    \vspace{0.2em}
+
+    \begin{itemize}
+        \item It would solve some headaches: more convincing identification, soothe some potential endogeneity issues
+        \item People have starting using new estimators in the job market \citep[\textit{e.g}][]{bib:becker2021}
+    \end{itemize}
+
+    % I am going to show you a general setting that is in line with my identification design and build from there to show you three of the issues that puzzle me. Mostly I am focusing on the identification of the estimands in this setting, and then I will jump if I have time to covariates and pre-treatment trends tests 
+
+\end{frame}
+
+% --------------------------------------------------------------
+
+\section{Identification Design}
+
+\begin{frame}{Identification}\label{slide:identification}
+
+    \begin{itemize}
+        \item Let $t \in \{1, \dots,  T\}$, $g \in \{1, \dots, G\}$ and $i \in \{1, \dots, N\}$ placeholders respectively for any time period (year), group (county) and individual.
+    \end{itemize}
+
+    \begin{equation*}
+        Y_{igt} = \alpha_g + \phi_t + \beta_{post} D_{gt} + \gamma X_{igt} + \varepsilon_{gt}\label{eq:twfe}
+    \end{equation*}
+    
+    \begin{itemize}
+    
+        \item $Y_{igt}$ denotes the outcome of individual $i$ in group $g$ at period $t$
+        \item $\alpha_g$ and $\phi_t$ are respectively group and period fixed effects
+        \item $\beta_{post}$ denote the coefficient of $D_{gt}$ a continuous treatment at $g$ in period $t$: in this special case $D_{gt} = 0 \ \forall \ g, t < \tau$ and $D_{gt} > 0 \ \forall \ g, t \geq \tau$, where $\tau$ is a constant time period (2009)
+        \item \textit{ignore} $X_{igt}$ covariates for now
+    
+    \end{itemize}
+    
+\end{frame}
+
+
+% --------------------------------------------------------------
+
+\begin{frame}{Outline}\label{slide:full-outline}
+  \tableofcontents
+\end{frame}
+
+% --------------------------------------------------------------
+
+\section{Issues}
+
+\subsection{Forbidden Comparisons in Non-Binary Treatment}
+
+\begin{frame}[allowframebreaks]{Issue 1: Forbidden Comparisons}
+
+    \begin{itemize}
+        \item Until recently, TWFE estimators have been considered equivalent to difference-in-differences under (conditional) parallel trends and no anticipation assumptions
+        \item However, many researchers \citep{bib:callaway2021a,bib:dechaisemartin2020,bib:goodman-bacon2021} % (and there is literally a new paper coming out every week)
+        have emphasized that the TWFE regressions may not identify a \textit{convex} combination of treatment effects due to 'forbidden extrapolations' \citep{bib:borusyak2021a}
+
+        \begin{itemize}
+            \item even without variation of treatment timing, forbidden comparisons arise from comparing groups with different treatment intensity at the same period
+            \item fail to estimate the weighted sum of treatment effects of each group $g$ after treatment by weighting some of the groups negatively
+        \end{itemize}
+
+    \end{itemize}
+
+    \framebreak
+    
+    \begin{itemize}
+        \item Following \citet{bib:dechaisemartin2018}, focusing on non-binary treatments
+
+        \item two-groups $g \in \{h(igh), l(low)\}$ and two-period setting $t \in \{pre, post\}$ for simplicity
+
+        \begin{equation*}
+            \hat{\beta}_{post} = \frac{Y_{h2} - Y_{h1} - (Y_{l2} - Y_{l1})}{D_{h2} - D_{h1} - (D_{l2} - D_{l1})}\tag{Wald-DID}\label{eq:walddid}
+        \end{equation*}
+
+    \end{itemize}
+
+    \framebreak
+
+    \begin{itemize}
+
+        \item Assume that group $h$ goes from 0 to 2 in second period, whereas $l$ goes from 0 to 1, and potential outcomes are linear in the number of units and constant over time, but differ for groups: $Y_{gt} = T_{gt}(0) + \delta_{g}d$ (with $d$ placeholder for treatment)
+
+        \item Denominator becomes 1
+        \item Numerator (under parallel trends) becomes $2\delta_{h} - \delta_{l}$, weighted sum of treatment effects BUT group $l$ is weighted negatively subtracting its treatment effect out from $\hat{\beta}_{post}$
+
+    \end{itemize}
+
+    \begin{center}
+        \textbf{Which heterogeneity-robust estimator is \\ correct to use in my case?}
+    \end{center}
+
+\end{frame}
+
+% --------------------------------------------------------------
+
+\begin{frame}{Issue 1: Forbidden Comparisons}{Potential Solution}
+    
+    % First I was thinking about an estimator ruling out dynamic effects (i.e. groups' current outcome only depends on its current treatment, no memory)
+    % \citet{bib:dechaisemartin2022} propose an estimator robust to continuous treatments that compares the outcome evolution of movers and stayers from t-1 to t, but I have no stayers after $\tau$ so I should assume a bandwidth to determine quasi-stayers, and calculate what they call the weighted average of movers potential outcome slope.
+    % I don't think this is a good strategy
+
+    \begin{itemize}
+        \item Ruling out dynamic effects (no memory) \citep[][with quasi-stayers]{bib:dechaisemartin2022}: IMO not a good idea
+
+        \item Special case of estimators allowing for dynamic effects % groups' current outcome also depends on all past treatments
+
+        \begin{itemize}
+            \item non-binary (continuous) treatment
+            \item special of staggered design where all groups assume a different treatment at the same period
+        \end{itemize}
+
+        \item \citet{bib:dechaisemartin2021} estimator (\texttt{did\_multiplegt} in Stata) allows for this estimation
+
+        \begin{itemize}
+            \item equivalent to estimate a weighted sum of DIDs between pairs of groups' treatment intensity
+            \item interpretation of the parameter as some average of the effect produced by one unit increase of treatment 
+        \end{itemize}
+
+    \end{itemize}
+
+\end{frame}
+
+% --------------------------------------------------------------
+
+\begin{frame}{Issue 1: Forbidden Comparisons}{Other Caveats in Estimation}
+    
+    \begin{itemize}
+        \item \citet{bib:callaway2021} propose a similar estimator but distinguish between
+
+        \begin{itemize}
+            \item \textit{level effect}: treatment effect of dose $d$, difference between group's potential outcome under treatment $d$ and untreated potential outcome
+            \item \textit{slope effect}: causal response to an incremental change in the dose $d$ \citep{bib:angrist1995} (!)
+            \item in the binary DIDs they coincide
+        \end{itemize}
+
+        \item \textbf{\citet{bib:dechaisemartin2021} does not automatically infer the slope effect!}
+
+    \end{itemize}
+
+    \begin{itemize}
+        \item Robustness to repeated cross-sectional data not clear
+
+        \begin{itemize}
+            \item I was following same individuals with age $\geq 16$ from pre-treatment wave ($t-3$) with attrition at the tails of the panel using sampling waves
+            \item I want to use repeated cross-section of individuals with age $\geq 16$ to increase power
+        \end{itemize}
+
+    \end{itemize}
+
+\end{frame}
+
+% --------------------------------------------------------------
+
+\subsection{Covariates Selection}
+
+\begin{frame}{Issue 2: Covariates Selection}{What are the 'Good' Controls?}
+    
+    \begin{itemize}
+        \item I have been controlling for:
+
+        \begin{itemize}
+            \item Time-varying second-order polynomial of age
+            \item pre-treatment (time-invariant) individual and household characteristics
+            \item pre-treatment (time-invariant) group-level (county) characteristics
+        \end{itemize}
+    \end{itemize}
+
+    \begin{center}
+        \textbf{is the correct way of doing it? Any suggestion?}
+    \end{center}
+
+\end{frame}
+
+% --------------------------------------------------------------
+
+\subsection{Pre-Treatment Tests under stronger assumptions}
+
+\begin{frame}\frametitle{Issue 3: Pre-Treatment Tests under stronger assumptions}
+    
+    \begin{itemize}
+        \item Both \citet{bib:dechaisemartin2021} and \citet{bib:callaway2021} use stronger parallel trends assumption (can be conditional):
+    \end{itemize}
+    
+    \begin{equation*}
+        \mathbb{E}\left[Y_{gt}(\bm{0}_t) - Y_{gt-1}(\bm{0}_{t-1})\right] = \mathbb{E}\left[Y_{g^{\prime}t}(\bm{0}_t) - Y_{g^{\prime}t-1}(\bm{0}_{t-1})\right], \ \forall \ g \neq g^{\prime}
+    \end{equation*}
+
+    \begin{itemize}
+
+        \item cumbersome to test with standard event-study plot with $R_{gt} = t - \tau + 1$ time relative to treatment : $Y_{igt} = \alpha_g + \phi_t + \sum_{r \neq 0} \mathds{1}\left[R_{gt} = r \right] \beta_r + \eta_{gt}$
+
+         \item \citet{bib:rambachan2021} propose a sensitivity analysis of pre-trends test
+
+         \begin{itemize}
+             \item a) estimate pre-treatment analogue to the counterfactual first post-treatment period b) impose an (arbitrary) magnitude of the post-treatment violations that needs to be reported in the event-study plot  
+         \end{itemize}
+
+    \end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{title}
+    
+     \begin{center}
+        \textbf{\LARGE Other suggestions, comments and \\ references are super welcome!}
+     \end{center}
+
+\end{frame}
+
+%----------------------------------------------------------------------------- %
+%   REFERENCES                                                                 %
+%----------------------------------------------------------------------------- %
+
+\begin{frame}[allowframebreaks]
+  \frametitle{References}
+  \bibliographystyle{agsm}
+  \bibliography{papers}
+\end{frame}
+
+\end{document}
+

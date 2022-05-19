@@ -1,0 +1,1 @@
+Last updated data from Amadeus: 2022-03-29

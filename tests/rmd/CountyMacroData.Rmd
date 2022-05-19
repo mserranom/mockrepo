@@ -1,0 +1,302 @@
+---
+title: "External Macro Variables at County Level"
+author: "Alessandro Pizzigolotto"
+institute: "Norwegian School of Economics (NHH)"
+bibliography: "`r here::here('docs', 'references', 'CreditPopulismRefs.bib')`"
+csl: "`r here::here('docs', 'references','harvard.csl')`"
+date: "_Last Updated_: `r format(Sys.Date(), '%d %B, %Y')`"
+github:
+    user: chickymonkeys
+    repo: CreditPopulism
+    branch: main
+output:
+    rmdformats::readthedown:
+        highlight: kate          # syntax highlighting format
+        number_sections: false   # sections numbering
+        fig_retina: 2            # rescaling for retina displays
+        fig_caption: true        # allow captions
+        dpi: 300                 # minimum dpi for nice printing
+        df_print: kable          # print tables with kableExtra package
+        code_folding: show       # code hidden by default when visible
+        citation_package: natbib # citation package natbib
+        self_contained: true     # graphics for standalone HTML files
+        use_bookdown: true       # referencing tables and figures
+---
+
+<style>
+
+#main p, #main li, #main ul {
+  text-align: justify;
+}
+
+#content {
+  max-width: none;
+}
+
+</style>
+
+```{r setup, include = FALSE}
+## -----------------------------------------------------------------------------
+## Setup Chunk and Package Loading
+##
+
+## Global RMarkdown Chunk Options
+knitr::opts_chunk$set(
+    echo = FALSE,
+    message = FALSE,
+    warning = FALSE,
+    error = FALSE,
+    tidy = FALSE,
+    cache = FALSE,
+    results = "asis"
+)
+
+## Chunk Aliases and Root Directory
+knitr::opts_knit$set(
+    root.dir = here::here(),
+    aliases = c(
+        h = "fig.height", # height of figure
+        w = "fig.width", # width of figure
+        oh = "out.height", # height of output
+        ow = "out.width", # width of output
+        pos = "fig.align", # figure alignment
+        cap = "fig.cap", # figure long caption
+        float = "fig.subcap", # figure sub-caption w/ float
+        cols = "fig.ncol", # number of columns in float
+        sep = "fig.sep" # figures separator
+    )
+)
+
+## Package Loading
+pacman::p_load(
+    dplyr,
+    stringr,
+    tidyr,
+    readr,
+    lubridate,
+    collapse,
+    wiesbaden,
+    sf
+)
+```
+
+```{r, soep-counties-table}
+soep_counties <- readr::read_delim(
+    here::here("data", "soep", "KKZ_KKZREK_Names_SOEPRemote.csv"),
+    delim = ";"
+)
+```
+
+```{r, wiesbaden-credentials}
+# TODO put this in a keyring file
+reg <- c(db = "regio", user = "RE007558", password = "noknob-3bapWe-macpud")
+destatis <- c(db = "de", user = "DEVCSSA4FC", password = "bazWej-1hobry-webjud")
+```
+
+```{r, download-destatis-tables}
+# table of population at county level by reference date
+# variable BEVSTD in numbers
+pop <- wiesbaden::retrieve_data(
+    tablename = "12411KJ002",
+    regionalmerkmal = "KREISE",
+    genesis = destatis
+) %>%
+    dplyr::mutate(JAHR = year(dmy(STAG))) %>%
+    dplyr::select(KREISE, JAHR, BEVSTD_val) %>%
+    tidyr::complete(KREISE, JAHR, fill = list(BEVSTD_val = NA)) %>%
+    dplyr::mutate(KREISE = as.integer(KREISE))
+colnames(pop) <- c("kkz", "syear", "pop")
+
+pop <- soep_counties %>%
+    dplyr::select("kkz", "kkz_rek") %>%
+    dplyr::left_join(pop, by = "kkz") %>%
+    dplyr::filter(!is.na(syear)) %>%
+    dplyr::group_by(kkz_rek, syear) %>%
+    dplyr::summarise(pop = collapse::fsum(pop)) %>%
+    dplyr::ungroup()
+    
+pop %>%
+    dplyr::group_by(kkz_rek) %>%
+    dplyr::summarise(n = n()) %>% View()
+
+
+# table of territory area at county level by reference date
+# variable FLC006 in km2
+area <- wiesbaden::retrieve_data(
+    tablename = "11111KJ001",
+    regionalmerkmal = "KREISE",
+    genesis = destatis
+) %>%
+    dplyr::mutate(JAHR = year(dmy(STAG))) %>%
+    dplyr::select(KREISE, JAHR, FLC006_val) %>%
+    tidyr::complete(KREISE, JAHR, fill = list(FLC006_val = NA)) %>%
+    dplyr::mutate(KREISE = as.integer(KREISE))
+colnames(area) <- c("kkz", "syear", "area")
+
+area <- soep_counties %>%
+    dplyr::select("kkz", "kkz_rek") %>%
+    dplyr::left_join(area, by = "kkz") %>%
+    dplyr::filter(!is.na(syear)) %>%
+    dplyr::group_by(kkz_rek, syear) %>%
+    dplyr::summarise(area = collapse::fsum(area)) %>%
+    dplyr::ungroup()
+
+# table foreigners at county level by sex and reference date
+# variable BEV027 in number of foreigners, GES is sex
+# there is also the breakdown by country groups (12521KJ002) and
+# citizenship (12521KJ001) but they are bulky to download
+ausl <- wiesbaden::retrieve_data(
+    tablename = "12521KJ004",
+    regionalmerkmal = "KREISE",
+    genesis = destatis
+) %>%
+    dplyr::mutate(JAHR = year(dmy(STAG))) %>%
+    dplyr::select(KREISE, JAHR, GES, BEV027_val) %>%
+    tidyr::spread(GES, BEV027_val) %>%
+    dplyr::mutate(GEST = GESM + GESW) %>%
+    tidyr::complete(KREISE, JAHR,
+                    fill = list(GEST = NA, GESM = NA, GESW = NA)) %>%
+    dplyr::mutate(KREISE = as.integer(KREISE))
+colnames(ausl) <- c("kkz", "syear", "nausl_m", "nausl_f", "nausl")
+# there are some missing values for two counties for some years
+ausl <- soep_counties %>%
+    dplyr::select("kkz", "kkz_rek") %>%
+    dplyr::left_join(ausl, by = "kkz") %>%
+    dplyr::filter(!is.na(syear)) %>%
+    dplyr::group_by(kkz_rek, syear) %>%
+    dplyr::summarise(
+        nausl_m = collapse::fsum(nausl_m),
+        nausl_f = collapse::fsum(nausl_f),
+        nausl   = collapse::fsum(nausl)
+) %>%
+    dplyr::ungroup()
+```
+
+```{r, download-regionalstatistik-tables}
+# table BIP and BIP je EW (GDP and GDP per capita) at county level
+# BIP802_val is GDP in 1000 EUR current prices
+# BIP804_val is GDP per capita is in EUR current prices
+gdp <- wiesbaden::retrieve_data(
+    tablename = "82111KJ008",
+    regionalmerkmal = "KREISE",
+    genesis = reg
+) %>%
+    dplyr::select(KREISE, JAHR, BIP802_val, BIP804_val) %>%
+    tidyr::complete(
+        KREISE, JAHR,
+        fill = list(BIP802_val = NA, BIP804_val = NA)
+) %>%
+    dplyr::mutate(KREISE = as.integer(KREISE))
+colnames(gdp) <- c("kkz", "syear", "gdp", "gdp_each")
+
+gdp <- soep_counties %>%
+    dplyr::select("kkz", "kkz_rek") %>%
+    dplyr::left_join(gdp, by = "kkz") %>%
+    dplyr::filter(!is.na(syear)) %>%
+    dplyr::group_by(kkz_rek, syear) %>%
+    dplyr::summarise(gdp = collapse::fsum(gdp)) %>%
+    dplyr::ungroup()
+
+# Retrieve unemployment rate at regional level
+# dUemp <- retrieve_datalist(tableseries="13211*", genesis = reg) %>%
+#     filter(grepl("reis", description))
+# The statistical office of Germany has multiple tables for unemployment rate
+# from 2000 to 2005 / 2006 to 2007 / 2008 / 2009 onward, with the same variable
+# for unemployment rate relative to all labour force ERWP10, we hope that
+# calculation is computed in the same way.
+# ERWP10_val is unemployment rate in percentage and years
+uempl <- wiesbaden::retrieve_data(tablename = "13211KJ009", genesis = reg) %>%
+    dplyr::select(c("KREISE", "JAHR", "ERWP10_val")) %>%
+    tidyr::complete(KREISE, JAHR, fill = list(ERWP10_val = NA)) %>%
+    dplyr::mutate(KREISE = as.integer(KREISE))
+colnames(uempl) <- c("kkz", "syear", "ureg")
+uempl <- soep_counties %>%
+    dplyr::select("kkz", "kkz_rek") %>%
+    dplyr::left_join(uempl, by = "kkz") %>%
+    dplyr::filter(!is.na(syear)) %>%
+    dplyr::select("kkz_rek", "syear", "ureg") %>%
+    dplyr::distinct()
+
+# Retrieve Bundestag election data at county level
+# From retrieve_metadata and retrieve_datalist function we know that eligible
+# voters are in numbers, as well as valid second choices and second choices
+# preferences, whereas turnout is a percentage
+# PART04 gives the name of the party, WAHL01_val is the number of eligible
+# voters, WAHLSR_val is the voter turnout, WAHL09_val.x is the number of
+# valid second choices, and WAHL09_val.y is the number of preferences
+election_data <- retrieve_data(tablename = "14111KJ001", genesis = reg) %>%
+    merge(retrieve_data(tablename = "14111KJ002", genesis = reg),
+        by = c("KREISE", "STAG")
+    ) %>%
+    dplyr::select(c(
+        "KREISE", "STAG", "PART04", "WAHL01_val", "WAHLSR_val",
+        "WAHL09_val.x", "WAHL09_val.y"
+    ))
+# Select variables
+colnames(election_data) <- c(
+    "kkz", "syear", "party", "v_eligible",
+    "v_turnout", "v_valid2choices", "v_2pref"
+)
+```
+
+```{r}
+# merge on area
+# seems like that the county codes are already re-coded
+# we use unemployment from the SOEP because it is a longer series
+county_variables <- merge(area, pop, by = c("KREISE", "JAHR"), all.x = TRUE) %>%
+    merge(., gdp, by = c("KREISE", "JAHR"), all.x = TRUE) %>%
+    merge(., ausl, by = c("KREISE", "JAHR"), all.x = TRUE) %>%
+    merge(., uempl, by = c("KREISE", "JAHR"), all.x = TRUE) %>%
+    dplyr::mutate(AUSLT = GEST / BEVSTD_val * 100) %>%
+    dplyr::mutate(BEVSTD_val_den = BEVSTD_val / FLC006_val) %>%
+    dplyr::mutate(KREISE = as.integer(KREISE)) %>%
+    dplyr::select(!ERWP10_val)
+colnames(county_variables) <- c(
+    "kkz", "syear", "area", "pop", "gdp",
+    "gdp_each", "nausl_m", "nausl_w",
+    "nausl", "ausl", "pop_density"
+)
+
+county_variables <- pop %>%
+    dplyr::left_join(area, by = c("kkz_rek", "syear")) %>%
+    dplyr::left_join(gdp, by = c("kkz_rek", "syear")) %>%
+    dplyr::left_join(ausl, by = c("kkz_rek", "syear")) %>%
+    dplyr::mutate(ausl = nausl / pop * 100) %>%
+    dplyr::mutate(pop_density = pop / area) %>%
+    dplyr::mutate(gdp = gdp * 1000) %>%
+    dplyr::mutate(gdp_each = gdp / pop)
+
+```
+
+```{r}
+# Rural: Kreis and Landkreis
+# Urban: Stadtkreis and Kreisfreie Stadt
+county_dummies <- sf::st_read(
+    here::here("data", "shapes", "vg250", "VG250_KRS.shp")
+) %>%
+    dplyr::filter(GF == 4) %>%
+    dplyr::mutate(kkz_rek = as.integer(AGS)) %>%
+    sf::st_drop_geometry() %>%
+    dplyr::mutate(
+        urban = ifelse(BEZ %in% c("Stadtkreis", "Kreisfreie Stadt"), 1, 0),
+        rural = ifelse(BEZ %in% c("Kreis", "Landkreis"), 1, 0),
+        kreis = ifelse(NBD == "ja", paste(GEN, BEZ), GEN)
+    ) %>%
+    dplyr::select(kkz_rek, urban, rural, kreis)
+```
+
+```{r, create-macro-panel}
+# add county urban/rural dummies
+macro_panel <- county_dummies %>%
+    dplyr::left_join(county_variables, by = "kkz_rek")
+```
+
+
+```{r, export-macro-variables}
+readr::write_delim(
+    macro_panel,
+    here::here("data", "counties", "macro_genesis.csv"),
+    delim = ";"
+)
+```
+

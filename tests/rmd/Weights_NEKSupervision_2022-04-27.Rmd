@@ -1,0 +1,1064 @@
+---
+title: "Credit Shocks and Populism"
+subtitle: "<br/>(Re-)Measuring County-Level Exposure to the Credit Shock"
+author: "Alessandro Pizzigolotto"
+date: "27^th^ April 2022"
+github:
+    user: chickymonkeys
+    repo: CreditPopulism
+    branch: main
+output:
+  xaringan::moon_reader:
+    self_contained: true
+    lib_dir: libs
+    fig_width: 9
+    fig_height: 3.5
+    fig_retina: 2
+    dpi: 300
+    fig_caption: true
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+      ratio: '16:9'
+---
+
+```{css, echo = FALSE}
+.font10 , .code10 .remark-code, .code10 .remark-inline-code{ font-size: 10%; }
+.font20 , .code20 .remark-code, .code20 .remark-inline-code{ font-size: 20%; }
+.font30 , .code30 .remark-code, .code30 .remark-inline-code{ font-size: 30%; }
+.font40 , .code40 .remark-code, .code40 .remark-inline-code{ font-size: 40%; }
+.font50 , .code50 .remark-code, .code50 .remark-inline-code{ font-size: 50%; }
+.font60 , .code60 .remark-code, .code60 .remark-inline-code{ font-size: 60%; }
+.font70 , .code70 .remark-code, .code70 .remark-inline-code{ font-size: 70%; }
+.font75 , .code75 .remark-code, .code75 .remark-inline-code{ font-size: 75%; }
+.font80 , .code80 .remark-code, .code80 .remark-inline-code{ font-size: 80%; }
+.font90 , .code90 .remark-code, .code90 .remark-inline-code{ font-size: 90%; }
+
+.remark-slide table thead th {
+    border-bottom: none;
+}
+```
+
+```{r setup, include=FALSE}
+## -----------------------------------------------------------------------------
+## Setup Chunk and Package Loading
+##
+
+options(htmltools.dir.version = FALSE, htmltools.preserve.raw = FALSE)
+
+knitr::opts_chunk$set(
+    echo = FALSE,
+    message = FALSE,
+    warning = FALSE,
+    error = FALSE,
+    tidy = FALSE,
+    cache = FALSE,
+    results = "asis"
+)
+
+## Chunk Aliases and Root Directory
+knitr::opts_knit$set(
+    root.dir = here::here(),
+    aliases = c(
+        h = "fig.height", # height of figure
+        w = "fig.width", # width of figure
+        oh = "out.height", # height of output
+        ow = "out.width", # width of output
+        pos = "fig.align", # figure alignment
+        cap = "fig.cap", # figure long caption
+        float = "fig.subcap", # figure sub-caption w/ float
+        cols = "fig.ncol", # number of columns in float
+        sep = "fig.sep" # figures separator
+    )
+)
+pacman::p_load(
+  dplyr,
+  ggplot2,
+  collapse,
+  data.table,
+  gt,
+  gtsummary,
+  sf,
+  tmap,
+  tmaptools
+)
+
+# https://irene.vrbik.ok.ubc.ca/slides/NHSRxaringan.html
+```
+
+# Motivation of the Presentation
+
+In the last weeks I have been working on the county-level measure of the credit shock exposure, because of:
+
+1. data issues (concerning the firms' sample)
+
+1. address comments about heterogeneity of the firms with respect to the shock within a county
+
+1. measuring the exposure is crucial to the outcome of the paper
+
+I would like to have your thoughts about what I have been trying to do
+
+---
+
+class: middle
+
+# Quick Reminder: County-Level Exposure to the Credit Shock
+
+We use this measure at county level to proxy the exposure to the credit shock (as in Huber, 2018):
+
+$$Exposure_{k} = {\sum_{f \in F_{k}} \omega_{f} \frac{\# CommerzbankRelationships_{f}}{\# Total Relationships_{f}}} \in  (0, 1)$$
+
+- $F_k$ is the total number of firms in county _k_ 
+
+- $\# CommerzbankRelationships_{f}$ is the number of bank relationships that a firm _f_ in county _k_ has with Commerzbank
+
+- $\# Total Relationships_{f}$ is the total number of bank relationships of a firm _f_ in county _k_
+
+- $\omega_{f}$ is a weighting factor for the average, by default $\omega_{f} = \frac{1}{F_{k}}$
+
+---
+
+class: middle
+
+## Sub-Optimal Data on Firms
+
+We use firms' data from Amadeus (Bureau Van Dijk):
+
+1. we cannot access to the exact bank relationships in 2006 (pre-shock year) contrary to Huber (2018)
+
+  - we have a cross-section of bank relationships at the last updated information (?)
+
+  - Creditreform Germany has been completely unresponsive with academics after Huber published and he cannot share the data
+
+  - **Assumption**: relationships stable over time due to extreme _stickiness_ of firm-bank relationships (Giannetti and Ongena (2012), Chodorow-Reich (2014), Kalemli-Ozcan et al. (2018) who compare different vintages of Amadeus).
+  
+1. Amadeus is not an historical database (leads to survival bias)
+
+  - delete information for firms not reporting for the last 5 years 
+
+  - quality of data collection improves each year (way less financial information for firms in the 2000s)
+  
+---
+
+class: middle
+
+### Time allocation of Bank Relationships
+
+There is not much we can do about the first issue, but:
+
+- Berg et al. (JFE 2021) are using the same data to calculate the shock and they validate Huber's results
+
+- I have talked with Huber and he has checked whether Berg et al. (2018) are highly correlated with his optimal data: &#10003;
+
+I will send him my county exposure to check the correlation.
+
+---
+
+class: middle
+
+### Missing Firms over Time
+
+```{r, load-firm-exposure, include = FALSE}
+firms <- fst::read_fst(
+    here::here("data", "firms", "exposure", "firm_exposure.fst")) %>%
+    as.data.table()
+firms_prev <- fst::read_fst(
+    here::here("data", "firms", "exposure", "firm_exposure_prev.fst")) %>%
+    as.data.table()
+
+```
+
+Compared to (around) July 2020 when I first looked into the firms sample, we lose `r nrow(firms_prev) - nrow(firms)` firms (`r nrow(firms_prev)` vs. `r nrow(firms)`). This is relevant for:
+
+- addressing firm heterogeneity within a county (next point)
+
+- Berg et al. (2021) have the same number of firms as our past sample
+
+---
+
+### Firm-Level Commerzbank Dependence
+
+<!-- The firm-level Commerzbank dependence distribution is very similar, while it is not that similar compared to Huber's as we have 20 percentage points more firms with no relationship with Commerzbank. -->
+
+.pull-left[
+.center[
+```{r}
+#| firm-dependence-current, echo = FALSE, dev = "svg", ow = "90%"
+cond_value <- firms %>%
+    dplyr::mutate(cond_exposure = ifelse(
+        cbk_relationships > 0, firm_exposure, NA
+    )) %>%
+    dplyr::summarize(
+        mean.zeroes = mean(firm_exposure),
+        mean.nozeroes = mean(cond_exposure, na.rm = TRUE)
+    )
+# firm-level Commerzbank Dependence from Amadeus data as Huber does
+firms %>%
+    dplyr::mutate(cond_exposure = ifelse(
+        cbk_relationships > 0, firm_exposure, NA
+    )) %>%
+    ggplot2::ggplot() +
+    ggplot2::geom_vline(
+        aes(xintercept = mean(firm_exposure)),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::annotate(
+        geom = "label", x = cond_value$mean.zeroes, y = 0.7,
+        label = paste0(
+            "Mean (uncond.): ",
+            round(cond_value$mean.zeroes, 3)
+        ),
+        hjust = -0.05, color = "#777777"
+    ) +
+    ggplot2::geom_vline(
+        aes(xintercept = mean(cond_exposure, na.rm = TRUE)),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::annotate(
+        geom = "label", x = cond_value$mean.nozeroes, y = 0.5,
+        label = paste0(
+            "Mean (cond.): ",
+            round(cond_value$mean.nozeroes, 3)
+        ),
+        hjust = -0.05, color = "#777777"
+    ) +
+    ggplot2::stat_bin(aes(
+        x = cond_exposure, y = ..count.. / sum(..count..), fill = "nozeroes"
+    ),
+    bins = 30,
+    alpha = 0.75, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(aes(
+        x = firm_exposure, y = ..count.. / sum(..count..), fill = "zeroes"
+    ),
+    na.rm = TRUE, bins = 30,
+    alpha = 0.75, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(
+        breaks = seq(0, 1, 0.1), limits = c(NA, 1.05)
+    ) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.1)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c("#EDB21D", "#048BA8"),
+        labels = c("Conditional", "Unconditional")
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("#Commerzbank Relationships / # Total Relationships") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .95))
+```
+</br>(a) Current Firms' Sample
+]]
+
+.pull-right[
+.center[
+```{r}
+#| firm-dependence-past, echo = FALSE, dev = "svg", ow = "90%"
+cond_value <- firms_prev %>%
+    dplyr::mutate(cond_exposure = ifelse(
+        cbk_relationships > 0, firm_exposure, NA
+    )) %>%
+    dplyr::summarize(
+        mean.zeroes = mean(firm_exposure),
+        mean.nozeroes = mean(cond_exposure, na.rm = TRUE)
+    )
+# firm-level Commerzbank Dependence from Amadeus data as Huber does
+firms_prev %>%
+    dplyr::mutate(cond_exposure = ifelse(
+        cbk_relationships > 0, firm_exposure, NA
+    )) %>%
+    ggplot2::ggplot() +
+    ggplot2::geom_vline(
+        aes(xintercept = mean(firm_exposure)),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::annotate(
+        geom = "label", x = cond_value$mean.zeroes, y = 0.7,
+        label = paste0(
+            "Mean (uncond.): ",
+            round(cond_value$mean.zeroes, 3)
+        ),
+        hjust = -0.05, color = "#777777"
+    ) +
+    ggplot2::geom_vline(
+        aes(xintercept = mean(cond_exposure, na.rm = TRUE)),
+        color = "#777777", linetype = "dashed"
+    ) +
+    ggplot2::annotate(
+        geom = "label", x = cond_value$mean.nozeroes, y = 0.5,
+        label = paste0(
+            "Mean (cond.): ",
+            round(cond_value$mean.nozeroes, 3)
+        ),
+        hjust = -0.05, color = "#777777"
+    ) +
+    ggplot2::stat_bin(aes(
+        x = cond_exposure, y = ..count.. / sum(..count..), fill = "nozeroes"
+    ),
+    bins = 30,
+    alpha = 0.75, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(aes(
+        x = firm_exposure, y = ..count.. / sum(..count..), fill = "zeroes"
+    ),
+    na.rm = TRUE, bins = 30,
+    alpha = 0.75, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(
+        breaks = seq(0, 1, 0.1), limits = c(NA, 1.05)
+    ) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.1)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c("#EDB21D", "#048BA8"),
+        labels = c("Conditional", "Unconditional")
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("#Commerzbank Relationships / # Total Relationships") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .95))
+```
+</br>(b) Past Firms' Sample]]
+
+---
+
+class: middle
+
+### County-Level Commerzbank Dependence
+
+```{r, read-county-exposure, include = FALSE}
+county_exposure <- fst::read_fst(
+  here::here("data", "exposure", "county_exposure.fst")) %>%
+  as.data.table()
+firms_count <- fst::read_fst(here::here("data", "exposure", "firms_count.fst"))
+```
+
+```{r, count-counties-exposure-measures, include = FALSE}
+counties_mean <- county_exposure[
+    , lapply(.SD, fmean),
+    .SDcols = patterns("^exposure_.")
+]
+counties_count <- county_exposure[
+    , lapply(.SD, function(x) sum(!is.na(x))),
+    .SDcols = patterns("^exposure_.")
+]
+```
+
+```{r, labels-histograms-county-exposure, include = FALSE}
+labels <- rbindlist(list(counties_mean, firms_count, counties_count),
+    use.names = TRUE
+)
+cols <- names(labels)
+# string conversion after rounding
+labels[, (cols) := lapply(
+    .SD, function(x) {
+        as.character(fifelse(
+            floor(x) == 0, round(x, 3), round(x, 0)
+        ))
+    }
+)]
+labels[1, (cols) := lapply(.SD, function(x) paste0("Mean: ", x))]
+labels[2, (cols) := lapply(.SD, function(x) paste0("Firms: ", x))]
+labels[3, (cols) := lapply(.SD, function(x) paste0("Counties: ", x, ";"))]
+# collapse rows into one string
+labels <- labels[, lapply(.SD, paste, collapse = "; ")]
+```
+
+.center[
+```{r, histogram-county-exposure-simple, dev = "svg", echo = FALSE, w = 8, h = 5}
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_mean),
+        color = "#048BA8", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_past_mean),
+        color = "#EDB21D", linetype = "solid"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(y = 0.08, x = exposure_mean, label = labels$exposure_mean),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.06, x = exposure_past_mean,
+            label = labels$exposure_past_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_mean, y = ..count.. / sum(..count..),
+            fill = "new"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_past_mean, y = ..count.. / sum(..count..),
+            fill = "old"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 10) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.01)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c(old = "#EDB21D", new = "#048BA8"),
+        labels = c(old = "Old Sample", new = "New Sample"),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .95))
+```
+]
+
+---
+
+### County-Level Commerzbank Dependence: Spatial Distribution
+
+```{r, districts-shapes, include = FALSE}
+germany <- sf::st_read(
+    here::here("data", "shapes", "vg250", "VG250_KRS.shp")
+) %>%
+    dplyr::filter(GF == 4) %>%
+    dplyr::mutate(kkz_rek = as.integer(AGS))
+```
+
+```{r, county-exposure-in-shape, include = FALSE}
+germany_exposure <- merge(
+    germany, county_exposure,
+    by = "kkz_rek", all.x = TRUE
+)
+```
+
+```{r, map-exposure-simple-breaks}
+exposure_mean_breaks <- county_exposure[
+    , .(kkz_rek, exposure_mean, exposure_past_mean)
+] %>%
+    data.table::melt(id.vars = "kkz_rek") %>%
+    dplyr::summarise(
+        fmin(value),
+        quants = list(
+            quantile(value, probs = seq(0.1, 0.9, 0.1), na.rm = TRUE)
+        ),
+        fmax(value)
+    ) %>%
+    tidyr::unnest_wider(quants) %>%
+    unlist()
+```
+
+.pull-left[
+.center[
+```{r, map-county-simple-current, echo = FALSE, dev = "svg", ow = "90%"}
+tmap::tm_shape(germany_exposure) +
+    tmap::tm_borders(lwd = .25, col = "#777777") +
+    tmap::tm_fill(
+        col = "exposure_mean", breaks = exposure_mean_breaks,
+        style = "fixed",
+        palette = tmaptools::get_brewer_pal("Blues",
+            n = 10,
+            plot = FALSE
+        ),
+        colorNA = "#777777", alpha = .9, title = ""
+    ) +
+    tmap::tm_graticules(
+        lwd = .1, col = "#777777",
+        alpha = .7, labels.size = .5
+    ) +
+    tmap::tm_compass(
+        type = "4star", position = c("right", "bottom"),
+        color.dark = "#777777", text.color = "#777777"
+    ) +
+    tmap::tm_shape(dplyr::filter(germany_exposure, exposure_mean == 0)) +
+    tmap::tm_fill(col = "red") +
+    tmap::tm_layout(frame = FALSE)
+```
+</br>(a) Current Firms' Sample
+]]
+
+.pull-right[
+.center[
+```{r, map-county-simple-past, echo = FALSE, dev = "svg", ow = "90%"}
+tmap::tm_shape(germany_exposure) +
+    tmap::tm_borders(lwd = .25, col = "#777777") +
+    tmap::tm_fill(
+        col = "exposure_past_mean", breaks = exposure_mean_breaks,
+        style = "fixed",
+        palette = tmaptools::get_brewer_pal("Blues",
+            n = 10,
+            plot = FALSE
+        ),
+        colorNA = "#777777", alpha = .9, title = ""
+    ) +
+    tmap::tm_graticules(
+        lwd = .1, col = "#777777",
+        alpha = .7, labels.size = .5
+    ) +
+    tmap::tm_compass(
+        type = "4star", position = c("right", "bottom"),
+        color.dark = "#777777", text.color = "#777777"
+    ) +
+    tmap::tm_layout(frame = FALSE)
+```
+</br>(b) Past Firms' Sample
+]]
+
+---
+class: inverse, center, middle
+
+This discussion is relevant when it comes to the next step...
+
+---
+
+## Accounting for Firms Heterogeneity
+
+Firms within a county are different from each other when it comes to:
+
+1. **relevance** within a county, how much is a firm important in the county's economy compared to its peers,
+
+1. **sensitivity** of the firm to liquidity shocks within a county, how the firm can face liquidity constraints.
+
+Based on those features, I want to re-balance $\omega_{f}$ from equal weights to a weighting scheme that takes into account one of these features (or both) when calculating the county-level exposure.
+
+---
+
+## Accounting for Firms Heterogeneity
+
+I propose these two measures to calculate weights:
+
+1. number (or cost) of employees
+
+1. current ratio (current assets over current liabilities)
+
+**Limitations**:
+
+- these financial variables at firm level are not available for a huge part of the firms in the sample 
+
+- I am adopting the balance sheets available at 2007 which are the most complete data
+
+This is something I can do both with the current and the past firm sample
+
+---
+
+## Weights with Firm-Level Data:
+
+Number (or cost) of employees:
+
+$$\omega_{ef} = \frac{employees_{f}}{\sum_{f \in k} employees_{f}}$$
+
+Current Ratio: I first calculate the current ratio for each firm and then inverse rank at county level the firms for their current ratio (to avoid large values). Firms with higher rank are more exposed to a liquidity shock than others
+
+$$\omega_{cf} = \frac{rank(ratio)_{f}}{\sum_{f \in k} rank(ratio)_{f}}$$
+
+Combined (at county level):
+
+$$Exposure_{k} = \frac{1}{2}\left[{\sum_{f \in F_{k}} \omega_{ef} \frac{\# CommerzbankRelationships_{f}}{\# Total Relationships_{f}}} + {\sum_{f \in F_{k}} \omega_{cf} \frac{\# CommerzbankRelationships_{f}}{\# Total Relationships_{f}}} \right]$$
+---
+
+### Weighted County-Level Commerzbank Dependence: Currency Ratio
+
+.center[
+```{r, histogram-individual-currency-ratio, dev = "svg", echo = FALSE, w = 8, h = 5}
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.curr_2007),
+        color = "#048BA8", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_mean),
+        color = "#EDB21D", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.14, x = exposure_w.curr_2007,
+            label = labels$exposure_w.curr_2007
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.13, x = exposure_mean,
+            label = labels$exposure_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.curr_2007, y = ..count.. / sum(..count..),
+            fill = "curr"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_mean, y = ..count.. / sum(..count..),
+            fill = "mean"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 10) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.01)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c(curr = "#048BA8", mean = "#EDB21D"),
+        labels = c(curr = "Currency Ratio (2007)", mean = "Equal Weights"),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .95))
+```
+]
+
+---
+
+### Weighted County-Level Commerzbank Dependence: Number of Employees
+
+.center[
+```{r, histogram-individual-number-employees, dev = "svg", echo = FALSE, w = 8, h = 5}
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.empl_2007),
+        color = "#048BA8", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_mean),
+        color = "#EDB21D", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.40, x = exposure_w.empl_2007,
+            label = labels$exposure_w.empl_2007
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.30, x = exposure_mean,
+            label = labels$exposure_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.empl_2007, y = ..count.. / sum(..count..),
+            fill = "curr"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_mean, y = ..count.. / sum(..count..),
+            fill = "mean"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 10) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.02)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c(curr = "#048BA8", mean = "#EDB21D"),
+        labels = c(curr = "No. of Employees (2007)", mean = "Equal Weights"),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .95))
+```
+]
+
+---
+
+### Weighted County-Level Commerzbank Dependence: Combining No. of Employees and Currency Ratio
+
+.center[
+```{r, histogram-individual-combined-curr-empl, dev = "svg", echo = FALSE, w = 8, h = 5}
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.curr.empl_2007),
+        color = "#048BA8", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_mean),
+        color = "#EDB21D", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.40, x = exposure_w.curr.empl_2007,
+            label = labels$exposure_w.curr.empl_2007
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.30, x = exposure_mean,
+            label = labels$exposure_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.curr.empl_2007, y = ..count.. / sum(..count..),
+            fill = "curr"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_mean, y = ..count.. / sum(..count..),
+            fill = "mean"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777"
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 10) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.02)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c(curr = "#048BA8", mean = "#EDB21D"),
+        labels = c(curr = "Combined (2007)", mean = "Equal Weights"),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .95))
+```
+]
+
+---
+
+## Weights pooling Firm-Level Data
+
+To overcome the data limitation and keep as much firms as possible, I have an alternative solution:
+
+- There is a firm size indicator for each firm: small, medium, large and very large;
+
+  - it comes from the structure of the Amadeus dataset and it is based on firms' operating revenue, total assets, and number of employees, but we do not know exactly what it means
+  
+  - **not available for the past firms' sample** (unfortunately I did not keep the indicator at first)
+  
+- I compute the average of number (or cost) of employees, current assets and current liabilities for each firm size category _within_ a county
+
+- I assign the values to each firm in the sample given their county and firm size indicator
+
+- I calculate firm level weights using these values
+
+  - I use the inverse currency ratio as the average current liabilities over average current assets
+
+In this way, all firms within a county of the same size category receive equal weights
+
+---
+
+##### Financial Variables: Summary Statistics by Firm Type
+
+```{r, setup-gtsummary-theme-summary-statistics, include = FALSE}
+summary_theme <- list(
+    "tbl_summary-str:default_con_type" = "continuous2",
+    "tbl_summary-str:categorical_stat" = "{n} ({p}%)",
+    "tbl_summary-str:continuous_stat" = c(
+        "{N_miss} ({p_miss})", "{mean}", "{sd}",
+        "{min}", "{median} ({p25} - {p75})", "{max}"
+    ),
+    "tbl_summary-arg:digits" = list(everything() ~ function(x) round(x, 3)),
+    "tbl_summary-fn:percent_fun" = function(x) style_percent(x, digits = 3),
+    "tbl_summary-arg:missing" = "no",
+    "style_number-arg:big.mark" = "",
+    "pkgwide-str:theme_name" = "Summary Tables by Group"
+)
+gtsummary::set_gtsummary_theme(summary_theme)
+gtsummary::theme_gtsummary_compact()
+```
+
+```{r, read-financials, include = FALSE}
+financials <- fst::read_fst(
+    here::here("data", "firms", "amadeus", "amadeus_financials.fst")) %>%
+    as.data.table()
+financials <- financials[, nrows := .N, by = .(idnr, closdate_year)][
+    nrows == 1 | nrows > 1 & repbas %like% "Consolidated"
+]
+financials <- financials[
+    idnr %in% firms[, idnr] & closdate_year %in% seq(2004, 2008)
+]
+```
+
+```{r, pooled-balance-sheets-summary-table, echo = FALSE}
+# columns to rescale
+cols <- c("staf", "cuas", "culi")
+financials %>%
+    dplyr::mutate_at(cols, function(x) x / 1000000) %>%
+    dplyr::mutate(ftype = dplyr::case_when(
+        ftype == "S" ~ "Small",
+        ftype == "M" ~ "Medium",
+        ftype == "L" ~ "Large",
+        ftype == "V" ~ "Very Large"
+    )) %>%
+    gtsummary::tbl_summary(
+        include = c("empl", all_of(cols)),
+        by = ftype,
+        label = list(
+            empl ~ "Number of Employees",
+            staf ~ "Cost of Employees (EUR Mln.)",
+            cuas ~ "Current Assets (EUR Mln.)",
+            culi ~ "Current Liabilities (EUR Mln.)"
+        )
+    ) %>%
+    gtsummary::add_overall(last = TRUE) %>%
+    gtsummary::modify_spanning_header(
+        all_stat_cols(stat_0 = FALSE) ~ "**Firm Size**"
+    ) %>%
+    gtsummary::modify_header(label ~ "**Variable**") %>%
+    gtsummary::as_gt() %>%
+    gt::tab_style(
+        style = list(cell_fill(color = "#F8F6BD"), cell_text(style = "italic")),
+        locations = cells_body(rows = row_type == "label")) %>%
+    gt::opt_css(
+        css = "
+        .gt_table {
+            font-size: 60%;
+        }",
+        add = FALSE)
+```
+
+
+---
+
+### Weights pooling Firm-Level Data: Employees
+
+.center[
+```{r, histogram-mean-empl, dev = "svg", echo = FALSE, w = 8, h = 5}
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.empl_mean),
+        color = "#048BA8", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.staf_mean),
+        color = "#F1EC6D", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_mean),
+        color = "#E47A11", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.15, x = exposure_w.empl_mean,
+            label = labels$exposure_w.empl_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.13, x = exposure_w.staf_mean,
+            label = labels$exposure_w.staf_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(y = 0.12, x = exposure_mean, label = labels$exposure_mean),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::stat_bin(
+        aes(x = exposure_mean, y = ..count.. / sum(..count..), fill = "mean"),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.empl_mean, y = ..count.. / sum(..count..),
+            fill = "empl"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.staf_mean, y = ..count.. / sum(..count..),
+            fill = "staf"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 10) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.01)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c(
+            empl = "#048BA8", staf = "#F1EC6D", mean = "#E47A11"
+        ),
+        labels = c(
+            empl = "No. of Employees", staf = "Cost of Employees",
+            mean = "Equal Weights"
+        ),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.9, .9))
+```
+]
+
+---
+
+### Weights pooling Firm-Level Data: Combined Employees and Currency Ratio
+
+.center[
+```{r, histogram-mean-combined-curr-empl, dev = "svg", echo = FALSE, w = 8, h = 5}
+ggplot2::ggplot(data = county_exposure) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.curr_mean.empl_mean),
+        color = "#048BA8", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_w.empl_mean),
+        color = "#EDB21D", linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+        data = counties_mean,
+        aes(xintercept = exposure_mean),
+        color = "#E47A11", linetype = "dashed"
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.13, x = exposure_w.curr_mean.empl_mean,
+            label = labels$exposure_w.curr_mean.empl_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.12, x = exposure_w.empl_mean,
+            label = labels$exposure_w.empl_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::geom_label(
+        data = counties_mean,
+        aes(
+            y = 0.11, x = exposure_mean,
+            label = labels$exposure_mean
+        ),
+        hjust = -0.01, color = "#777777", size = 3
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_mean, y = ..count.. / sum(..count..),
+            fill = "simple"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.curr_mean.empl_mean, y = ..count.. / sum(..count..),
+            fill = "combo"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::stat_bin(
+        aes(
+            x = exposure_w.empl_mean, y = ..count.. / sum(..count..),
+            fill = "single"
+        ),
+        bins = 40, alpha = 0.5, size = 0.25, color = "#777777", na.rm = T
+    ) +
+    ggplot2::scale_x_continuous(n.breaks = 10) +
+    ggplot2::scale_y_continuous(breaks = seq(0, 1, 0.01)) +
+    ggplot2::scale_fill_manual(
+        name = "", values = c(
+            combo = "#048BA8", single = "#EDB21D", simple = "#E47A11"
+        ),
+        labels = c(
+            combo = "Combined", single = "No. Employees",
+            simple = "Equal Weights"
+        ),
+        guide = guide_legend(override.aes = list(color = NA))
+    ) +
+    ggplot2::ylab("Fraction") +
+    ggplot2::xlab("County-Level Exposure") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = c(.85, .9))
+```
+]
+
+---
+
+### Weights pooling Firm-Level Data: Combined Employees and Currency Ratio
+
+.pull-left[
+.center[
+```{r, map-county-combined-mean, echo = FALSE, dev = "svg", ow = "90%"}
+tmap::tm_shape(germany_exposure) +
+    tmap::tm_borders(lwd = .25, col = "#777777") +
+    tmap::tm_fill(
+        col = "exposure_w.curr_mean.empl_mean",
+        n = 10, style = "quantile",
+        palette = tmaptools::get_brewer_pal("Blues", n = 10, plot = FALSE),
+        colorNA = "#777777", alpha = .9,
+        title = "County-Level Commerzbank Exposure"
+    ) +
+    tmap::tm_graticules(
+        lwd = .1, col = "#777777",
+        alpha = .7, labels.size = .5
+    ) +
+    tmap::tm_layout(title.size = .75, frame = FALSE)
+```
+]]
+
+.pull-right[
+.center[
+```{r, map-county-combined-mean-diff, echo = FALSE, dev = "svg", ow = "90%"}
+germany_exposure %>%
+    dplyr::mutate(diff = exposure_w.curr_mean.empl_mean - exposure_mean) %>%
+    tmap::tm_shape() +
+    tmap::tm_borders(lwd = .25, col = "#777777") +
+    tmap::tm_fill(
+        col = "diff", n = 6, style = "quantile",
+        palette = tmaptools::get_brewer_pal("RdBu", n = 6, plot = FALSE),
+        colorNA = "#777777", alpha = .9,
+        title = "Difference from Equal Weights"
+    ) +
+    tmap::tm_graticules(
+        lwd = .1, col = "#777777",
+        alpha = .7, labels.size = .5
+    ) +
+    tmap::tm_layout(title.size = .75, frame = FALSE)
+```
+]]
+
+---
+class: inverse, middle
+
+## Discussion
+
+- Is it worth to take into account the heterogeneity of firms within a county?
+
+- If so, what do you think it is the best option of those described?
+
+- Should I stick with the past sample of firms without weighting?
+
+- I will try to run the identification using the different exposure measures
+
+
